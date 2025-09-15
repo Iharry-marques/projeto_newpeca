@@ -15,22 +15,22 @@ const SQLiteStore = require('connect-sqlite3')(session);
 
 // --- Importações do Projeto ---
 const config = require('./config');
-const { User, Client, Campaign, Piece, sequelize } = require('./models');
+const { User, Client, Campaign, Piece, CampaignClient, sequelize } = require('./models');
 
 // --- Início da Aplicação Express ---
 const app = express();
-app.set('trust proxy', 1); // Importante para o Render e cookies seguros
+app.set('trust proxy', 1);
 
-// --- Configuração dos Middlewares (A Ordem é Importante) ---
+// --- Configuração dos Middlewares ---
 
-// 1. CORS: Deve vir primeiro para permitir a comunicação.
+// 1. CORS
 const corsOptions = {
   origin: process.env.FRONTEND_URL,
   credentials: true,
 };
 app.use(cors(corsOptions));
 
-// 2. Sessões: Agora salvas no banco de dados para serem persistentes.
+// 2. Sessões
 app.use(
   session({
     store: new SQLiteStore({
@@ -48,7 +48,7 @@ app.use(
   })
 );
 
-// 3. Passport.js: Deve vir depois da configuração da sessão.
+// 3. Passport.js
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -61,12 +61,14 @@ const authRoutes = require('./routes/auth');
 const campaignRoutes = require('./routes/campaigns');
 const { router: clientAuthRoutes } = require('./routes/clientAuth');
 const approvalRoutes = require('./routes/approval');
+const clientManagementRoutes = require('./routes/clientManagement'); // NOVO
 const errorHandler = require('./middleware/errorHandler');
 
 app.use('/auth', authRoutes);
 app.use('/campaigns', campaignRoutes);
 app.use('/client-auth', clientAuthRoutes);
 app.use('/approval', approvalRoutes);
+app.use('/clients', clientManagementRoutes); // NOVA ROTA
 
 app.use(errorHandler);
 

@@ -1,10 +1,11 @@
-// frontend/src/ClientApprovalPage.jsx
+// frontend/src/ClientApprovalPage.jsx - Atualizado com 3 estados
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   Check, 
   Edit3, 
+  AlertTriangle,
   Download, 
   Eye, 
   X, 
@@ -19,25 +20,32 @@ import {
 } from 'lucide-react';
 import aprobiLogo from './assets/aprobi-logo.jpg';
 
+// Estados de validação atualizados
 const VALIDATION_STATUSES = {
   PENDING: 'pending',
   APPROVED: 'approved',
   NEEDS_ADJUSTMENT: 'needs_adjustment',
-  REJECTED: 'rejected'
+  CRITICAL_POINTS: 'critical_points'
 };
 
 const STATUS_COLORS = {
   [VALIDATION_STATUSES.PENDING]: 'bg-slate-100 text-slate-700 border-slate-300',
   [VALIDATION_STATUSES.APPROVED]: 'bg-emerald-100 text-emerald-700 border-emerald-300',
   [VALIDATION_STATUSES.NEEDS_ADJUSTMENT]: 'bg-amber-100 text-amber-700 border-amber-300',
-  [VALIDATION_STATUSES.REJECTED]: 'bg-rose-100 text-rose-700 border-rose-300'
+  [VALIDATION_STATUSES.CRITICAL_POINTS]: 'bg-rose-100 text-rose-700 border-rose-300'
 };
 
 const STATUS_LABELS = {
   [VALIDATION_STATUSES.PENDING]: 'Pendente',
   [VALIDATION_STATUSES.APPROVED]: 'Aprovado',
   [VALIDATION_STATUSES.NEEDS_ADJUSTMENT]: 'Precisa Ajustes',
-  [VALIDATION_STATUSES.REJECTED]: 'Rejeitado'
+  [VALIDATION_STATUSES.CRITICAL_POINTS]: 'Pontos Críticos'
+};
+
+const STATUS_DESCRIPTIONS = {
+  [VALIDATION_STATUSES.APPROVED]: 'Peça aprovada sem alterações',
+  [VALIDATION_STATUSES.NEEDS_ADJUSTMENT]: 'Precisa de pequenos ajustes',
+  [VALIDATION_STATUSES.CRITICAL_POINTS]: 'Requer atenção especial ou mudanças importantes'
 };
 
 // Componente para ícone do tipo de arquivo
@@ -61,7 +69,7 @@ const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
       return (
         <img
           src={imageUrl}
-          alt={piece.filename}
+          alt={piece.originalName || piece.filename}
           className="w-full h-48 object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity"
           onClick={() => onOpenModal(piece)}
         />
@@ -123,46 +131,75 @@ const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
       <div className="mb-4 flex items-center">
         <FileTypeIcon fileType={piece.mimetype} />
         <span className="ml-2 text-sm font-semibold text-slate-700 truncate">
-          {piece.filename}
+          {piece.originalName || piece.filename}
         </span>
       </div>
 
-      {/* Botões de Aprovação */}
-      <div className="mb-4 grid grid-cols-2 gap-2">
+      {/* Botões de Aprovação - 3 estados */}
+      <div className="mb-4 grid grid-cols-3 gap-2">
         <button
           onClick={() => handleStatusChange(VALIDATION_STATUSES.APPROVED)}
-          className={`p-3 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center justify-center space-x-2 ${
+          className={`p-3 rounded-xl text-sm font-semibold transition-all duration-200 flex flex-col items-center justify-center space-y-1 ${
             validation.status === VALIDATION_STATUSES.APPROVED
               ? 'bg-emerald-500 text-white shadow-lg scale-105'
               : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
           }`}
+          title={STATUS_DESCRIPTIONS[VALIDATION_STATUSES.APPROVED]}
         >
           <Check className="w-4 h-4" />
-          <span>Aprovar</span>
+          <span className="text-xs">Aprovado</span>
         </button>
         
         <button
           onClick={() => handleStatusChange(VALIDATION_STATUSES.NEEDS_ADJUSTMENT)}
-          className={`p-3 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center justify-center space-x-2 ${
+          className={`p-3 rounded-xl text-sm font-semibold transition-all duration-200 flex flex-col items-center justify-center space-y-1 ${
             validation.status === VALIDATION_STATUSES.NEEDS_ADJUSTMENT
               ? 'bg-[#ffc801] text-white shadow-lg scale-105'
               : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
           }`}
+          title={STATUS_DESCRIPTIONS[VALIDATION_STATUSES.NEEDS_ADJUSTMENT]}
         >
           <Edit3 className="w-4 h-4" />
-          <span>Ajustes</span>
+          <span className="text-xs">Ajustes</span>
+        </button>
+
+        <button
+          onClick={() => handleStatusChange(VALIDATION_STATUSES.CRITICAL_POINTS)}
+          className={`p-3 rounded-xl text-sm font-semibold transition-all duration-200 flex flex-col items-center justify-center space-y-1 ${
+            validation.status === VALIDATION_STATUSES.CRITICAL_POINTS
+              ? 'bg-rose-500 text-white shadow-lg scale-105'
+              : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+          }`}
+          title={STATUS_DESCRIPTIONS[VALIDATION_STATUSES.CRITICAL_POINTS]}
+        >
+          <AlertTriangle className="w-4 h-4" />
+          <span className="text-xs">Crítico</span>
         </button>
       </div>
 
-      {/* Campo de Comentário */}
+      {/* Campo de Comentário - obrigatório para status diferentes de aprovado */}
       <div className="mb-4">
         <textarea
           value={validation.comment || ''}
           onChange={(e) => handleCommentChange(e.target.value)}
-          placeholder="Comentários (opcional)..."
-          className="w-full p-3 border border-slate-200 rounded-xl text-sm resize-none focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none transition-all"
+          placeholder={
+            validation.status === VALIDATION_STATUSES.APPROVED 
+              ? "Comentários (opcional)..."
+              : validation.status === VALIDATION_STATUSES.CRITICAL_POINTS
+                ? "Descreva os pontos críticos (obrigatório)..."
+                : "Descreva os ajustes necessários (obrigatório)..."
+          }
+          className={`w-full p-3 border rounded-xl text-sm resize-none outline-none transition-all ${
+            (validation.status !== VALIDATION_STATUSES.APPROVED && validation.status !== VALIDATION_STATUSES.PENDING && (!validation.comment || validation.comment.trim() === ''))
+              ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+              : 'border-slate-200 focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20'
+          }`}
           rows="3"
+          required={validation.status !== VALIDATION_STATUSES.APPROVED && validation.status !== VALIDATION_STATUSES.PENDING}
         />
+        {validation.status !== VALIDATION_STATUSES.APPROVED && validation.status !== VALIDATION_STATUSES.PENDING && (!validation.comment || validation.comment.trim() === '') && (
+          <p className="text-red-500 text-xs mt-1">Comentário é obrigatório para este status</p>
+        )}
       </div>
 
       {/* Status Atual */}
@@ -183,7 +220,7 @@ const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
   );
 };
 
-// Modal para visualização ampliada
+// Modal para visualização ampliada (sem mudanças)
 const FileModal = ({ piece, onClose }) => {
   if (!piece) return null;
 
@@ -194,7 +231,7 @@ const FileModal = ({ piece, onClose }) => {
       return (
         <img
           src={imageUrl}
-          alt={piece.filename}
+          alt={piece.originalName || piece.filename}
           className="max-w-full max-h-[70vh] object-contain rounded-xl"
         />
       );
@@ -223,7 +260,7 @@ const FileModal = ({ piece, onClose }) => {
         <div className="flex items-center justify-between p-6 border-b border-slate-200">
           <div className="flex items-center space-x-3">
             <FileTypeIcon fileType={piece.mimetype} />
-            <h3 className="text-xl font-bold text-slate-800">{piece.filename}</h3>
+            <h3 className="text-xl font-bold text-slate-800">{piece.originalName || piece.filename}</h3>
           </div>
           <button
             onClick={onClose}
@@ -299,7 +336,30 @@ const ClientApprovalPage = () => {
     }));
   };
 
+  const validateSubmission = () => {
+    for (const [pieceId, validation] of Object.entries(validations)) {
+      // Se não foi avaliado, não pode enviar
+      if (validation.status === VALIDATION_STATUSES.PENDING) {
+        return { valid: false, message: 'Todas as peças devem ser avaliadas antes de enviar' };
+      }
+      
+      // Se precisa ajustes ou tem pontos críticos, comentário é obrigatório
+      if ((validation.status === VALIDATION_STATUSES.NEEDS_ADJUSTMENT || validation.status === VALIDATION_STATUSES.CRITICAL_POINTS) && 
+          (!validation.comment || validation.comment.trim() === '')) {
+        return { valid: false, message: 'Comentários são obrigatórios para peças que precisam de ajustes ou têm pontos críticos' };
+      }
+    }
+    
+    return { valid: true };
+  };
+
   const handleSubmit = async () => {
+    const validation = validateSubmission();
+    if (!validation.valid) {
+      alert(validation.message);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       // Preparar dados para envio
@@ -321,8 +381,10 @@ const ClientApprovalPage = () => {
         throw new Error('Erro ao enviar aprovação');
       }
 
-      // Mostrar sucesso e redirecionar
-      alert('Aprovação registrada com sucesso! Obrigado pelo seu feedback.');
+      const result = await response.json();
+
+      // Mostrar resultado
+      alert(`Aprovação registrada com sucesso!\n\nResumo:\n- Aprovadas: ${result.stats.approved}\n- Precisam ajustes: ${result.stats.needsAdjustment}\n- Pontos críticos: ${result.stats.criticalPoints}`);
       navigate('/client/success');
     } catch (err) {
       alert('Erro ao enviar aprovação: ' + err.message);
@@ -339,6 +401,13 @@ const ClientApprovalPage = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const getValidationStats = () => {
+    return Object.values(validations).reduce((acc, validation) => {
+      acc[validation.status] = (acc[validation.status] || 0) + 1;
+      return acc;
+    }, {});
   };
 
   if (isLoading) {
@@ -371,6 +440,8 @@ const ClientApprovalPage = () => {
       </div>
     );
   }
+
+  const stats = getValidationStats();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -434,15 +505,45 @@ const ClientApprovalPage = () => {
           )}
         </div>
 
+        {/* Estatísticas de Validação */}
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 mb-8">
+          <h3 className="text-lg font-bold text-slate-800 mb-4">Progresso da Validação</h3>
+          <div className="grid grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-emerald-600">{stats.approved || 0}</div>
+              <div className="text-sm text-slate-600">Aprovadas</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-amber-600">{stats.needs_adjustment || 0}</div>
+              <div className="text-sm text-slate-600">Precisam Ajustes</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-rose-600">{stats.critical_points || 0}</div>
+              <div className="text-sm text-slate-600">Pontos Críticos</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-slate-600">{stats.pending || 0}</div>
+              <div className="text-sm text-slate-600">Pendentes</div>
+            </div>
+          </div>
+        </div>
+
         {/* Peças para Aprovação */}
         <div className="mb-8">
           <h3 className="text-2xl font-bold text-slate-800 mb-4">
             Peças para Aprovação ({campaign.pieces.length})
           </h3>
-          <p className="text-slate-600 mb-6">
-            Analise cada peça e marque como "Aprovado" ou "Precisa Ajustes". 
-            Você pode adicionar comentários específicos para cada item.
-          </p>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+            <h4 className="font-semibold text-amber-800 mb-2">Instruções de Aprovação:</h4>
+            <ul className="text-amber-700 text-sm space-y-1">
+              <li><strong>Aprovado:</strong> A peça está perfeita e pode ser utilizada</li>
+              <li><strong>Precisa Ajustes:</strong> Pequenas correções são necessárias</li>
+              <li><strong>Pontos Críticos:</strong> Requer atenção especial ou mudanças importantes</li>
+            </ul>
+            <p className="text-amber-600 text-sm mt-2 font-medium">
+              Comentários são obrigatórios para peças que precisam de ajustes ou têm pontos críticos.
+            </p>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {campaign.pieces.map(piece => (
