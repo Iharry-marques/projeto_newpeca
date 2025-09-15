@@ -1,4 +1,4 @@
-// Em: backend/models/Campaign.js
+// backend/models/Campaign.js - Versão atualizada
 
 const { DataTypes } = require('sequelize');
 const crypto = require('crypto');
@@ -25,6 +25,25 @@ module.exports = (sequelize) => {
     approvalHash: { // Link público para aprovação
       type: DataTypes.STRING,
       unique: true,
+    },
+    // NOVOS CAMPOS
+    status: {
+      type: DataTypes.ENUM('draft', 'sent_for_approval', 'in_review', 'approved', 'needs_changes'),
+      defaultValue: 'draft',
+    },
+    sentForApprovalAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    // ID do usuário Suno que criou
+    createdBy: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+    // ID do cliente que vai aprovar (opcional - pode usar o approvalHash em vez disso)
+    clientId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
     },
   }, {
     hooks: {

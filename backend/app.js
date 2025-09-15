@@ -15,7 +15,7 @@ const SQLiteStore = require('connect-sqlite3')(session);
 
 // --- Importações do Projeto ---
 const config = require('./config');
-const { User, Campaign, Piece, sequelize } = require('./models');
+const { User, Client, Campaign, Piece, sequelize } = require('./models');
 
 // --- Início da Aplicação Express ---
 const app = express();
@@ -56,23 +56,19 @@ app.use(passport.session());
 app.use(bodyParser.json());
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
-// --- Associações dos Modelos ---
-Campaign.hasMany(Piece);
-Piece.belongsTo(Campaign);
-
 // --- ROTAS DA APLICAÇÃO ---
 const authRoutes = require('./routes/auth');
 const campaignRoutes = require('./routes/campaigns');
+const { router: clientAuthRoutes } = require('./routes/clientAuth');
+const approvalRoutes = require('./routes/approval');
 const errorHandler = require('./middleware/errorHandler');
 
 app.use('/auth', authRoutes);
 app.use('/campaigns', campaignRoutes);
+app.use('/client-auth', clientAuthRoutes);
+app.use('/approval', approvalRoutes);
 
 app.use(errorHandler);
-
-
-
-
 
 /* ========== Inicialização do Servidor ========== */
 

@@ -553,6 +553,134 @@ const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
   );
 };
 
+// =====================================
+// PASSO 2A: Adicione o componente CampaignStatusCard após os imports
+// =====================================
+const CampaignStatusCard = ({ campaign, pieceCount, onSendForApproval }) => {
+  if (!campaign) return null;
+
+  const canSendForApproval = campaign.status === 'draft' && pieceCount > 0;
+  const isAlreadySent = ['sent_for_approval', 'in_review', 'needs_changes', 'approved'].includes(campaign.status);
+
+  const getStatusInfo = () => {
+    switch (campaign.status) {
+      case 'draft':
+        return {
+          label: 'Rascunho',
+          color: 'bg-slate-100 text-slate-700 border-slate-300',
+          description: 'Campanha ainda não foi enviada para aprovação'
+        };
+      case 'sent_for_approval':
+        return {
+          label: 'Enviada para Aprovação',
+          color: 'bg-blue-100 text-blue-700 border-blue-300',
+          description: 'Aguardando revisão do cliente'
+        };
+      case 'in_review':
+        return {
+          label: 'Em Revisão',
+          color: 'bg-amber-100 text-amber-700 border-amber-300',
+          description: 'Cliente está analisando as peças'
+        };
+      case 'needs_changes':
+        return {
+          label: 'Precisa de Ajustes',
+          color: 'bg-orange-100 text-orange-700 border-orange-300',
+          description: 'Cliente solicitou modificações'
+        };
+      case 'approved':
+        return {
+          label: 'Aprovada',
+          color: 'bg-emerald-100 text-emerald-700 border-emerald-300',
+          description: 'Campanha aprovada pelo cliente'
+        };
+      default:
+        return {
+          label: 'Status Desconhecido',
+          color: 'bg-slate-100 text-slate-700 border-slate-300',
+          description: ''
+        };
+    }
+  };
+
+  const statusInfo = getStatusInfo();
+
+  return (
+    <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200 mb-8">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-4">
+            <h3 className="text-lg font-bold text-slate-800">Status da Campanha</h3>
+            <span className={`px-3 py-1 text-sm font-semibold rounded-full border ${statusInfo.color}`}>
+              {statusInfo.label}
+            </span>
+          </div>
+          
+          <p className="text-slate-600 mb-4">{statusInfo.description}</p>
+          
+          {isAlreadySent && campaign.sentForApprovalAt && (
+            <p className="text-sm text-slate-500 mb-4">
+              Enviada em: {new Date(campaign.sentForApprovalAt).toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              })}
+            </p>
+          )}
+
+          {isAlreadySent && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <h4 className="font-semibold text-blue-800 mb-2">Link de Aprovação</h4>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={`${window.location.origin}/client/approval/${campaign.approvalHash}`}
+                  readOnly
+                  className="flex-1 px-3 py-2 text-sm bg-white border border-blue-200 rounded-lg"
+                />
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/client/approval/${campaign.approvalHash}`);
+                    alert('Link copiado para área de transferência!');
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Copiar
+                </button>
+              </div>
+              <p className="text-sm text-blue-600 mt-2">
+                Envie este link para o cliente realizar a aprovação das peças.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {canSendForApproval && (
+          <button
+            onClick={() => onSendForApproval(campaign.id)}
+            className="ml-6 px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition-all transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center space-x-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
+            <span>Enviar para Aprovação</span>
+          </button>
+        )}
+
+        {!canSendForApproval && campaign.status === 'draft' && (
+          <div className="ml-6 px-6 py-3 bg-slate-100 text-slate-500 font-semibold rounded-xl flex items-center space-x-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.062 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <span>Adicione peças primeiro</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // Componente principal da aplicação
 const App = () => {
@@ -672,6 +800,34 @@ const App = () => {
   const handleCampaignCreated = (newCampaign) => {
     setCampaigns(prev => [newCampaign, ...prev]);
     setSelectedCampaignId(newCampaign.id);
+  };
+
+  // =====================================
+  // PASSO 2B: Adicione a função handleSendForApproval dentro do componente App
+  // =====================================
+  const handleSendForApproval = async (campaignId) => {
+    if (!confirm('Tem certeza que deseja enviar esta campanha para aprovação? Esta ação não pode ser desfeita.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns/${campaignId}/send-for-approval`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao enviar campanha para aprovação');
+      }
+
+      const data = await response.json();
+      
+      alert(`Campanha enviada para aprovação com sucesso!\n\nLink de aprovação:\n${data.campaign.approvalLink}`);
+      window.location.reload();
+    } catch (error) {
+      alert('Erro ao enviar campanha: ' + error.message);
+    }
   };
 
   return (
@@ -858,5 +1014,4 @@ const App = () => {
   );
 };
 
-// No final, troquei o nome do componente principal para HomePage para ficar mais claro
-export default App; // Mantive 'App' aqui se for o seu padrão, mas recomendo renomear para HomePage se este for o único conteúdo do arquivo.
+export default App;
