@@ -8,6 +8,8 @@ import ClientLoginPage from './ClientLoginPage';
 import ClientApprovalPage from './ClientApprovalPage';
 import Spinner from './Spinner';
 import './App.css';
+import ClientManagementPage from './ClientManagementPage';
+
 
 // Componente para rotas protegidas de usuários Suno
 function ProtectedRoute({ children }) {
@@ -140,6 +142,15 @@ function App() {
         element={
           <ProtectedRoute>
             <HomePage />
+          </ProtectedRoute>
+        }
+      />
+      {/* Nova rota protegida para gerenciamento de clientes */}
+      <Route
+        path="/clients"
+        element={
+          <ProtectedRoute>
+            <ClientManagementPage />
           </ProtectedRoute>
         }
       />

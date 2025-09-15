@@ -32,6 +32,7 @@ const ClientDashboard = () => {
       }
     };
 
+    // Atualizado para consumir o novo formato da rota
     const fetchCampaigns = async () => {
       try {
         const token = localStorage.getItem('clientToken');
@@ -57,6 +58,7 @@ const ClientDashboard = () => {
 
         const data = await response.json();
         setCampaigns(data.campaigns || []);
+        if (data.client) setClientData(data.client);
       } catch (err) {
         setError(err.message);
       } finally {

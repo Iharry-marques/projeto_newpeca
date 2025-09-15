@@ -20,8 +20,10 @@ import {
   AlertTriangle,
   RefreshCw
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import aprobiLogo from './assets/aprobi-logo.jpg';
 import CampaignSelector from './components/CampaignSelector';
+import ClientSelectionModal from './components/ClientSelectionModal';
 
 // Estados das peças no fluxo Suno
 const PIECE_STATUSES = {
@@ -527,6 +529,140 @@ const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
   );
 };
 
+// NOVO COMPONENTE - SunoFeedbackViewer (APENAS visualização, sem botões de aprovação)
+const SunoFeedbackViewer = ({ piece, onViewFile }) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  const renderPreview = () => {
+    const imageUrl = `${import.meta.env.VITE_BACKEND_URL}/campaigns/files/${piece.filename}`;
+    
+    if (piece.mimetype && piece.mimetype.startsWith('image/')) {
+      return (
+        <div className="relative group">
+          <img
+            src={imageUrl}
+            alt={piece.originalName || piece.filename}
+            className="w-full h-48 object-cover rounded-xl"
+          />
+          {isHovered && (
+            <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center transition-all duration-200">
+              <button
+                onClick={() => onViewFile(piece)}
+                className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full flex items-center space-x-2 hover:bg-white transition-colors"
+              >
+                <Eye className="w-4 h-4 text-slate-700" />
+                <span className="text-sm font-semibold text-slate-700">Visualizar</span>
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    } else if (piece.mimetype && piece.mimetype.startsWith('video/')) {
+      return (
+        <div className="relative group">
+          <div className="w-full h-48 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl flex items-center justify-center">
+            <div className="text-center">
+              <Video className="w-16 h-16 text-purple-400 mx-auto mb-2" />
+              <span className="text-purple-600 font-medium">Vídeo</span>
+            </div>
+          </div>
+          {isHovered && (
+            <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center transition-all duration-200">
+              <button
+                onClick={() => onViewFile(piece)}
+                className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full flex items-center space-x-2 hover:bg-white transition-colors"
+              >
+                <Eye className="w-4 h-4 text-slate-700" />
+                <span className="text-sm font-semibold text-slate-700">Visualizar</span>
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+    
+    return (
+      <div className="relative group">
+        <div className="w-full h-48 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl flex items-center justify-center">
+          <div className="text-center">
+            <FileTypeIcon fileType={piece.mimetype} />
+            <span className="text-slate-600 font-medium mt-2 block">Arquivo</span>
+          </div>
+        </div>
+        {isHovered && (
+          <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center transition-all duration-200">
+            <button
+              onClick={() => onViewFile(piece)}
+              className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full flex items-center space-x-2 hover:bg-white transition-colors"
+            >
+              <Eye className="w-4 h-4 text-slate-700" />
+              <span className="text-sm font-semibold text-slate-700">Visualizar</span>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div 
+      className="bg-white rounded-2xl shadow-lg border-2 border-slate-200 p-6 hover:shadow-xl transition-all duration-300"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {renderPreview()}
+      
+      <div className="mt-4">
+        {/* Nome do arquivo */}
+        <div className="flex items-center mb-3">
+          <FileTypeIcon fileType={piece.mimetype} />
+          <span className="ml-3 text-sm font-semibold text-slate-700 truncate">
+            {piece.originalName || piece.filename}
+          </span>
+        </div>
+
+        {/* Status da Peça - COM COR baseada no feedback do cliente */}
+        <div className="mb-3">
+          <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full border ${STATUS_COLORS[piece.status]}`}>
+            {piece.status === PIECE_STATUSES.APPROVED && '✅ '}
+            {piece.status === PIECE_STATUSES.NEEDS_ADJUSTMENT && '🔄 '}
+            {piece.status === PIECE_STATUSES.CRITICAL_POINTS && '⚠️ '}
+            {piece.status === PIECE_STATUSES.PENDING && '⏳ '}
+            {STATUS_LABELS[piece.status]}
+          </span>
+        </div>
+
+        {/* Comentário do Cliente - SE HOUVER */}
+        {piece.comment && (
+          <div className="mb-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+            <div className="text-xs font-semibold text-slate-500 mb-1">💬 Feedback do Cliente:</div>
+            <p className="text-sm text-slate-700">{piece.comment}</p>
+            {piece.reviewedAt && (
+              <div className="text-xs text-slate-500 mt-1">
+                📅 {new Date(piece.reviewedAt).toLocaleDateString('pt-BR')} às {new Date(piece.reviewedAt).toLocaleTimeString('pt-BR')}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Botão de download */}
+        <div className="flex justify-center">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(`${import.meta.env.VITE_BACKEND_URL}/campaigns/files/${piece.filename}`, '_blank');
+            }}
+            className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            title="Baixar arquivo"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Componente principal da aplicação
 const HomePage = () => {
   const [campaigns, setCampaigns] = useState([]);
@@ -537,6 +673,8 @@ const HomePage = () => {
   const [selectedPieces, setSelectedPieces] = useState(new Set());
   const [selectedFile, setSelectedFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isClientSelectionModalOpen, setClientSelectionModalOpen] = useState(false);
+  const navigate = useNavigate();
 
   // Buscar campanhas
   useEffect(() => {
@@ -694,16 +832,12 @@ const HomePage = () => {
   };
 
   // Enviar para aprovação
-  const handleSendForApproval = async () => {
+  const handleSendForApproval = async (selectedClientIds = []) => {
     if (!selectedCampaign) return;
 
     const attachedPieces = pieces.filter(piece => piece.status === PIECE_STATUSES.ATTACHED);
     if (attachedPieces.length === 0) {
       alert("Anexe pelo menos uma peça à campanha antes de enviar para aprovação.");
-      return;
-    }
-
-    if (!confirm(`Enviar campanha "${selectedCampaign.name}" para aprovação?\n\n${attachedPieces.length} peça(s) será(ão) enviada(s).`)) {
       return;
     }
 
@@ -713,7 +847,7 @@ const HomePage = () => {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ clientIds: selectedClientIds }),
       });
 
       if (!response.ok) {
@@ -731,9 +865,65 @@ const HomePage = () => {
           : piece
       ));
       
-      alert(`Campanha enviada com sucesso!\n\nLink de aprovação:\n${result.campaign.approvalLink}`);
+      // Mostrar resultado
+      const clientCount = selectedClientIds.length;
+      const message = clientCount > 0 
+        ? `Campanha enviada com sucesso para ${clientCount} cliente(s)!\n\nLink de aprovação:\n${result.campaign.approvalLink}`
+        : `Campanha enviada com sucesso!\n\nLink de aprovação:\n${result.campaign.approvalLink}`;
+      
+      alert(message);
     } catch (error) {
       alert('Erro ao enviar campanha: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Função para reenviar campanha após ajustes
+  const handleResendCampaign = async () => {
+    if (!selectedCampaign || selectedCampaign.status !== 'needs_changes') return;
+
+    const piecesNeedingAdjustment = pieces.filter(piece => 
+      piece.status === PIECE_STATUSES.NEEDS_ADJUSTMENT || 
+      piece.status === PIECE_STATUSES.CRITICAL_POINTS
+    );
+
+    if (piecesNeedingAdjustment.length === 0) {
+      alert("Não há peças que precisem de ajustes para reenviar.");
+      return;
+    }
+
+    if (!confirm(`Reenviar campanha "${selectedCampaign.name}" após ajustes?\n\n${piecesNeedingAdjustment.length} peça(s) será(ão) reenviada(s) para aprovação.`)) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/approval/campaigns/${selectedCampaignId}/resend`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao reenviar campanha');
+      }
+
+      const result = await response.json();
+      
+      // Atualizar status da campanha
+      setSelectedCampaign(prev => ({ ...prev, status: 'sent_for_approval' }));
+      
+      // Atualizar peças que estavam com problemas para pending
+      setPieces(prev => prev.map(piece => 
+        (piece.status === PIECE_STATUSES.NEEDS_ADJUSTMENT || piece.status === PIECE_STATUSES.CRITICAL_POINTS)
+          ? { ...piece, status: PIECE_STATUSES.PENDING, comment: null, reviewedAt: null }
+          : piece
+      ));
+      
+      alert(`Campanha reenviada com sucesso!\n\nLink de aprovação:\n${result.approvalLink}`);
+    } catch (error) {
+      alert('Erro ao reenviar campanha: ' + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -780,6 +970,23 @@ const HomePage = () => {
                   Gestão de Peças Criativas - Painel Suno
                 </p>
               </div>
+            </div>
+            {/* Botões de ação */}
+            <div className="flex space-x-4">
+              <button
+                onClick={() => navigate('/clients')}
+                className="flex items-center justify-center px-6 py-3 bg-gradient-to-r from-slate-500 to-slate-600 text-white font-semibold rounded-xl hover:from-slate-600 hover:to-slate-700 transition-all transform hover:scale-105 shadow-lg hover:shadow-xl"
+              >
+                <Users className="w-5 h-5 mr-2" />
+                Gerenciar Clientes
+              </button>
+              <button
+                onClick={() => setCampaignModalOpen(true)}
+                className="flex items-center justify-center px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition-all transform hover:scale-105 shadow-lg hover:shadow-xl"
+              >
+                <PlusCircle className="w-5 h-5 mr-2" />
+                Nova Campanha
+              </button>
             </div>
           </div>
         </div>
@@ -844,7 +1051,7 @@ const HomePage = () => {
               {/* Botão de enviar para aprovação */}
               {selectedCampaign.status === 'draft' && attachedPieces.length > 0 && (
                 <button
-                  onClick={handleSendForApproval}
+                  onClick={() => setClientSelectionModalOpen(true)}
                   disabled={isLoading}
                   className="flex items-center px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all transform hover:scale-105 disabled:opacity-50"
                 >
@@ -868,6 +1075,17 @@ const HomePage = () => {
                     <Link className="w-4 h-4 mr-2" />
                     Copiar Link
                   </button>
+                  {/* Botão de reenviar após ajustes */}
+                  {selectedCampaign.status === 'needs_changes' && (
+                    <button
+                      onClick={handleResendCampaign}
+                      disabled={isLoading}
+                      className="flex items-center px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all transform hover:scale-105 disabled:opacity-50 mt-2"
+                    >
+                      <RefreshCw className="w-5 h-5 mr-2" />
+                      Reenviar após Ajustes
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -971,6 +1189,90 @@ const HomePage = () => {
           </div>
         )}
 
+        {/* Feedback do Cliente - APENAS VISUALIZAÇÃO para SUNO */}
+        {reviewPieces.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-800">Status das Peças Enviadas ({reviewPieces.length})</h2>
+                <p className="text-slate-600">Feedback recebido do cliente - você pode visualizar mas não alterar</p>
+              </div>
+              
+              {/* Resumo do Status */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div className="text-center">
+                    <div className="text-xl font-bold text-emerald-600">
+                      {reviewPieces.filter(p => p.status === PIECE_STATUSES.APPROVED).length}
+                    </div>
+                    <div className="text-slate-600">Aprovadas</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xl font-bold text-amber-600">
+                      {reviewPieces.filter(p => p.status === PIECE_STATUSES.NEEDS_ADJUSTMENT).length}
+                    </div>
+                    <div className="text-slate-600">Precisam Ajustes</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xl font-bold text-rose-600">
+                      {reviewPieces.filter(p => p.status === PIECE_STATUSES.CRITICAL_POINTS).length}
+                    </div>
+                    <div className="text-slate-600">Pontos Críticos</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Ações Disponíveis para SUNO */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-blue-800 font-semibold mb-1">Ações Disponíveis:</h3>
+                  <p className="text-blue-700 text-sm">
+                    Após revisar o feedback do cliente, você pode reenviar as peças corrigidas ou exportar as aprovadas.
+                  </p>
+                </div>
+                <div className="flex space-x-3">
+                  {/* Botão Reenviar se há peças com problemas */}
+                  {reviewPieces.some(p => [PIECE_STATUSES.NEEDS_ADJUSTMENT, PIECE_STATUSES.CRITICAL_POINTS].includes(p.status)) && (
+                    <button
+                      onClick={handleResendCampaign}
+                      disabled={isLoading}
+                      className="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white font-semibold rounded-lg hover:shadow-lg transition-all transform hover:scale-105 disabled:opacity-50"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Reenviar Ajustes
+                    </button>
+                  )}
+                  
+                  {/* Botão Exportar PDF se há peças aprovadas */}
+                  {reviewPieces.some(p => p.status === PIECE_STATUSES.APPROVED) && (
+                    <button
+                      onClick={handleExportPDF}
+                      disabled={isLoading}
+                      className="flex items-center px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold rounded-lg hover:shadow-lg transition-all transform hover:scale-105 disabled:opacity-50"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Exportar PDF ({reviewPieces.filter(p => p.status === PIECE_STATUSES.APPROVED).length})
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Grid das Peças - APENAS VISUALIZAÇÃO para SUNO */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {reviewPieces.map(piece => (
+                <SunoFeedbackViewer
+                  key={piece.id}
+                  piece={piece}
+                  onViewFile={setSelectedFile}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Estado vazio */}
         {!selectedCampaignId && (
           <div className="text-center py-12">
@@ -1001,6 +1303,16 @@ const HomePage = () => {
         onClose={() => setCampaignModalOpen(false)}
         onCampaignCreated={handleCampaignCreated}
       />
+
+      {/* Modal de seleção de cliente */}
+      {selectedCampaign && (
+        <ClientSelectionModal
+          isOpen={isClientSelectionModalOpen}
+          onClose={() => setClientSelectionModalOpen(false)}
+          onSendForApproval={handleSendForApproval}
+          campaignName={selectedCampaign.name}
+        />
+      )}
     </div>
   );
 };
