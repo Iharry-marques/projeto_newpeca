@@ -19,13 +19,22 @@ const { User, Client, Campaign, Piece, CampaignClient, sequelize } = require('./
 
 // --- Início da Aplicação Express ---
 const app = express();
-app.set('trust proxy', 1);
+
+// Configuração de ambiente
+const isProd = process.env.NODE_ENV === 'production';
+
+// Só use trust proxy em produção atrás de proxy
+if (isProd) app.set('trust proxy', 1);
 
 // --- Configuração dos Middlewares ---
 
 // 1. CORS
+const allowed = [process.env.FRONTEND_URL, 'http://localhost:3001'];
 const corsOptions = {
-  origin: process.env.FRONTEND_URL,
+  origin: (origin, cb) => {
+    if (!origin || allowed.includes(origin)) return cb(null, true);
+    return cb(new Error('Not allowed by CORS'));
+  },
   credentials: true,
 };
 app.use(cors(corsOptions));
