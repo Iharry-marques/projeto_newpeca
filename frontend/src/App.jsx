@@ -1,179 +1,86 @@
-// frontend/src/App.jsx - Versão atualizada
-
-import React, { useState, useEffect } from 'react';
+// frontend/src/App.jsx
 import { Routes, Route, Navigate } from 'react-router-dom';
-import LoginPage from './LoginPage';
-import HomePage from './HomePage';
-import ClientLoginPage from './ClientLoginPage';
-import ClientApprovalPage from './ClientApprovalPage';
-import Spinner from './Spinner';
-import './App.css';
-import ClientManagementPage from './ClientManagementPage';
+import ProtectedRoute from './guards/ProtectedRoute';
+import Login from './pages/Login.jsx';
 
+/** 
+ * 👉 AQUI você aponta para as SUAS PÁGINAS reais.
+ * Exemplo de estrutura comum (ajuste os imports):
+ */
+// SUNO
+// import SunoDashboard from './pages/Suno/Dashboard.jsx';
+// import SunoCampanhas from './pages/Suno/Campanhas.jsx';
+// import SunoCampanhaDetalhe from './pages/Suno/CampanhaDetalhe.jsx';
 
-// Componente para rotas protegidas de usuários Suno
-function ProtectedRoute({ children }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(null);
+// CLIENTE
+// import ClienteDashboard from './pages/Cliente/Dashboard.jsx';
+// import ClienteCampanha from './pages/Cliente/Campanha.jsx';
 
-  useEffect(() => {
-    const checkAuthStatus = async () => {
-      try {
-        const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/auth/status`, {
-          credentials: 'include',
-        });
+// Enquanto você ajusta os imports/acertos de nome, deixo placeholders:
+function SunoDashboard() { return <div style={{ padding: 24 }}><h1>Suno • Dashboard</h1></div>; }
+function SunoCampanhas() { return <div style={{ padding: 24 }}><h1>Suno • Campanhas</h1></div>; }
+function SunoCampanhaDetalhe() { return <div style={{ padding: 24 }}><h1>Suno • Campanha Detalhe</h1></div>; }
 
-        if (response.ok) {
-          const data = await response.json();
-          setIsAuthenticated(data.isAuthenticated);
-        } else {
-          setIsAuthenticated(false);
-        }
-      } catch (error) {
-        console.error('Erro ao verificar autenticação:', error);
-        setIsAuthenticated(false);
-      }
-    };
+function ClienteDashboard() { return <div style={{ padding: 24 }}><h1>Cliente • Dashboard</h1></div>; }
+function ClienteCampanha() { return <div style={{ padding: 24 }}><h1>Cliente • Campanha</h1></div>; }
 
-    checkAuthStatus();
-  }, []);
+function NotFound() { return <div style={{ padding: 24 }}><h1>404</h1></div>; }
 
-  if (isAuthenticated === null) {
-    return <Spinner />;
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return children;
-}
-
-// Componente para rotas protegidas de clientes
-function ClientProtectedRoute({ children }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(null);
-
-  useEffect(() => {
-    const checkClientAuth = async () => {
-      const token = localStorage.getItem('clientToken');
-      if (!token) {
-        setIsAuthenticated(false);
-        return;
-      }
-
-      try {
-        const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/client-auth/status`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-
-        if (response.ok) {
-          setIsAuthenticated(true);
-        } else {
-          localStorage.removeItem('clientToken');
-          localStorage.removeItem('clientData');
-          setIsAuthenticated(false);
-        }
-      } catch (error) {
-        console.error('Erro ao verificar autenticação do cliente:', error);
-        localStorage.removeItem('clientToken');
-        localStorage.removeItem('clientData');
-        setIsAuthenticated(false);
-      }
-    };
-
-    checkClientAuth();
-  }, []);
-
-  if (isAuthenticated === null) {
-    return <Spinner />;
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/client/login" replace />;
-  }
-
-  return children;
-}
-
-// Página de sucesso para clientes
-function ClientSuccessPage() {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
-      <div className="text-center max-w-md">
-        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-          <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        <h1 className="text-2xl font-bold text-slate-800 mb-4">Aprovação Enviada!</h1>
-        <p className="text-slate-600 mb-6">
-          Seu feedback foi registrado com sucesso. A agência será notificada sobre suas aprovações e sugestões.
-        </p>
-        <p className="text-sm text-slate-500">
-          Você pode fechar esta janela.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// Página de dashboard para clientes (lista de campanhas)
-function ClientDashboard() {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
-      <div className="text-center max-w-md">
-        <h1 className="text-2xl font-bold text-slate-800 mb-4">Portal do Cliente</h1>
-        <p className="text-slate-600">
-          Esta área será desenvolvida para mostrar suas campanhas disponíveis para aprovação.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function App() {
+export default function App() {
   return (
     <Routes>
-      {/* Rotas para usuários Suno */}
-      <Route path="/login" element={<LoginPage />} />
+      {/* raiz manda para /suno por padrão (ajuste se quiser) */}
+      <Route path="/" element={<Navigate to="/suno" replace />} />
+
+      {/* rota livre (quase não usada, o guard já redireciona) */}
+      <Route path="/login" element={<Login />} />
+
+      {/* Área Suno (apenas usuários com role SUNO) */}
       <Route
-        path="/"
+        path="/suno"
         element={
-          <ProtectedRoute>
-            <HomePage />
+          <ProtectedRoute allowRoles={['SUNO']}>
+            <SunoDashboard />
           </ProtectedRoute>
         }
       />
-      {/* Nova rota protegida para gerenciamento de clientes */}
       <Route
-        path="/clients"
+        path="/suno/campanhas"
         element={
-          <ProtectedRoute>
-            <ClientManagementPage />
+          <ProtectedRoute allowRoles={['SUNO']}>
+            <SunoCampanhas />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/suno/campanhas/:id"
+        element={
+          <ProtectedRoute allowRoles={['SUNO']}>
+            <SunoCampanhaDetalhe />
           </ProtectedRoute>
         }
       />
 
-      {/* Rotas para clientes */}
-      <Route path="/client/login" element={<ClientLoginPage />} />
-      <Route path="/client/success" element={<ClientSuccessPage />} />
+      {/* Área Cliente (apenas CLIENT) */}
       <Route
-        path="/client/dashboard"
+        path="/cliente"
         element={
-          <ClientProtectedRoute>
-            <ClientDashboard />
-          </ClientProtectedRoute>
+          <ProtectedRoute allowRoles={['CLIENT']}>
+            <ClienteDashboard />
+          </ProtectedRoute>
         }
       />
-      
-      {/* Rota pública para aprovação via hash */}
-      <Route path="/client/approval/:hash" element={<ClientApprovalPage />} />
+      <Route
+        path="/cliente/campanhas/:id"
+        element={
+          <ProtectedRoute allowRoles={['CLIENT']}>
+            <ClienteCampanha />
+          </ProtectedRoute>
+        }
+      />
 
-      {/* Redirecionamentos */}
-      <Route path="/client" element={<Navigate to="/client/login" replace />} />
+      {/* 404 */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
-
-export default App;

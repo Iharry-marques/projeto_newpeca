@@ -1,98 +1,73 @@
-require('dotenv').config(); // MUITO IMPORTANTE: Deve ser a primeira linha
-
-// --- Importações de Pacotes ---
+// backend/app.js
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const session = require('express-session');
-const passport = require('./auth');
-const bodyParser = require('body-parser');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
-const SQLiteStore = require('connect-sqlite3')(session);
+const cookieSession = require('cookie-session');
+const passport = require('passport');
 
-// --- Importações do Projeto ---
-const config = require('./config');
-const { User, Client, Campaign, Piece, CampaignClient, sequelize } = require('./models');
+const { googleAuthRouter, ensureAuth, meRouter } = require('./auth');
 
-// --- Início da Aplicação Express ---
 const app = express();
 
-// Configuração de ambiente
-const isProd = process.env.NODE_ENV === 'production';
+/* 1) Proxy e body parser */
+app.set('trust proxy', 1);
+app.use(express.json());
 
-// Só use trust proxy em produção atrás de proxy
-if (isProd) app.set('trust proxy', 1);
-
-// --- Configuração dos Middlewares ---
-
-// 1. CORS
-const allowed = [process.env.FRONTEND_URL, 'http://localhost:3001'];
-const corsOptions = {
-  origin: (origin, cb) => {
-    if (!origin || allowed.includes(origin)) return cb(null, true);
-    return cb(new Error('Not allowed by CORS'));
-  },
+/* 2) CORS */
+app.use(cors({
+  origin: process.env.FRONTEND_URL, // ex.: http://localhost:3001
   credentials: true,
-};
-app.use(cors(corsOptions));
+}));
 
-// 2. Sessões
-app.use(
-  session({
-    store: new SQLiteStore({
-      db: 'database.sqlite',
-      dir: './',
-    }),
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: true,
-      proxy: true,
-      sameSite: 'none',
-    },
-  })
-);
+/* 3) Cookie-session (stateless) */
+app.use(cookieSession({
+  name: 'sess',
+  secret: process.env.SESSION_SECRET,
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.COOKIE_SAMESITE || 'lax', // 'none' em domínios diferentes + HTTPS
+  maxAge: 24 * 60 * 60 * 1000,
+}));
 
-// 3. Passport.js
+/* 3.1) SHIM p/ compat do Passport com cookie-session */
+app.use((req, res, next) => {
+  if (!req.session) req.session = {};
+  if (typeof req.session.regenerate !== 'function') {
+    req.session.regenerate = (cb) => cb && cb();
+  }
+  if (typeof req.session.save !== 'function') {
+    req.session.save = (cb) => cb && cb();
+  }
+  next();
+});
+
+/* 4) Passport */
 app.use(passport.initialize());
 app.use(passport.session());
 
-// 4. Outros Middlewares
-app.use(bodyParser.json());
-const upload = multer({ dest: path.join(__dirname, 'uploads') });
+/* Saúde */
+app.get('/GetHealth', (_, res) => res.send('Healthy'));
 
-// --- ROTAS DA APLICAÇÃO ---
-const authRoutes = require('./routes/auth');
-const campaignRoutes = require('./routes/campaigns');
-const { router: clientAuthRoutes } = require('./routes/clientAuth');
-const approvalRoutes = require('./routes/approval');
-const clientManagementRoutes = require('./routes/clientManagement'); // NOVO
-const errorHandler = require('./middleware/errorHandler');
+/* Auth + util */
+app.use(googleAuthRouter);
+app.use('/me', meRouter);
 
-app.use('/auth', authRoutes);
-app.use('/campaigns', campaignRoutes);
-app.use('/client-auth', clientAuthRoutes);
-app.use('/approval', approvalRoutes);
-app.use('/clients', clientManagementRoutes); // NOVA ROTA
+/* Exemplo de rota protegida */
+app.get('/suno/protected', ensureAuth, (req, res) => {
+  res.json({ ok: true, user: req.user, msg: 'Rota protegida (Suno)' });
+});
 
-app.use(errorHandler);
+/* 404 */
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
 
-/* ========== Inicialização do Servidor ========== */
-
-async function start() {
-  try {
-    await sequelize.sync();
-    const port = process.env.PORT || 3000;
-    app.listen(port, () => {
-      console.log(`[SUCESSO] Servidor rodando na porta ${port}`);
-    });
-  } catch (error) {
-    console.error('[ERRO] Não foi possível iniciar o servidor:', error);
-  }
+/* Start local */
+const PORT = process.env.PORT || 3000;
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`API listening on http://localhost:${PORT}`);
+  });
 }
 
-start();
+module.exports = app;
