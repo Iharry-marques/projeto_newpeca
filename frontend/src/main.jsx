@@ -1,13 +1,18 @@
-import React from "react";
-import { createRoot } from "react-dom/client";
-import App from "./pages/App.jsx";
+// Em: frontend/src/main.jsx
 
-import "./index.css";
-import "./App.css";
-import "./Spinner.css";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 
-createRoot(document.getElementById("root")).render(
+// Apontando para o App.jsx correto, dentro da pasta 'pages'
+import App from './pages/App.jsx'; 
+
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
-  </React.StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </React.StrictMode>,
 );

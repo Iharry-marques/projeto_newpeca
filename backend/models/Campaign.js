@@ -1,4 +1,4 @@
-// backend/models/Campaign.js - Versão atualizada com novos estados
+// Em: backend/models/Campaign.js
 
 const { DataTypes } = require('sequelize');
 const crypto = require('crypto');
@@ -22,32 +22,14 @@ module.exports = (sequelize) => {
     endDate: {
       type: DataTypes.DATE,
     },
-    approvalHash: {
+    // ADICIONE ESTE CAMPO
+    status: {
+      type: DataTypes.STRING,
+      defaultValue: 'draft', // Ex: 'draft', 'sent_for_approval', 'approved'
+    },
+    approvalHash: { 
       type: DataTypes.STRING,
       unique: true,
-    },
-    // Estados da campanha conforme fluxo
-    status: {
-      type: DataTypes.ENUM('draft', 'sent_for_approval', 'in_review', 'needs_changes', 'approved'),
-      defaultValue: 'draft',
-    },
-    sentForApprovalAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
-    },
-    approvedAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
-    },
-    // ID do usuário Suno que criou
-    createdBy: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-    },
-    // Observações gerais da campanha
-    notes: {
-      type: DataTypes.TEXT,
-      allowNull: true,
     },
   }, {
     hooks: {

@@ -1,78 +1,88 @@
-// backend/app.js
+// Em: backend/app.js
+
 require('dotenv').config();
 
+// --- Importações de Pacotes ---
 const express = require('express');
 const cors = require('cors');
-const cookieSession = require('cookie-session');
-const { googleAuthRouter, ensureAuth, meRouter, passport } = require('./auth');
+const session = require('express-session');
+const SQLiteStore = require('connect-sqlite3')(session);
+const bodyParser = require('body-parser');
 
-const campaignRoutes = require('./routes/campaigns'); // pode ficar por enquanto
-const approvalRoutes = require('./routes/approval');
-const clientManagementRoutes = require('./routes/clientManagement');
-const { sequelize } = require('./models');
+// --- Importações do Projeto (Corrigidas) ---
+const { googleAuthRouter, ensureAuth, meRouter, passport } = require('./auth'); // <-- MUDANÇA AQUI
+const campaignRoutes = require('./routes/campaigns');
+const { Campaign, Piece, sequelize } = require('./models');
+const errorHandler = require('./middleware/errorHandler');
 
+// --- Início da Aplicação Express ---
 const app = express();
+const isProduction = process.env.NODE_ENV === 'production';
 
-/* 1) proxy + body */
 app.set('trust proxy', 1);
-app.use(express.json());
 
-/* 2) CORS */
+// --- Configuração dos Middlewares ---
+
+// 1. CORS
 app.use(cors({
   origin: process.env.FRONTEND_URL,
   credentials: true,
 }));
 
-/* 3) Cookie Session */
-app.use(cookieSession({
-  name: 'sess',
-  secret: process.env.SESSION_SECRET || 'dev',
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production' ? true : false,
-  sameSite: process.env.COOKIE_SAMESITE || 'lax',
-  maxAge: 24 * 60 * 60 * 1000,
-}));
+// 2. Body Parser
+app.use(bodyParser.json());
 
-// compat cookie-session <-> passport
-app.use((req, _res, next) => {
-  if (req.session) {
-    if (typeof req.session.regenerate !== 'function') req.session.regenerate = cb => cb && cb();
-    if (typeof req.session.save !== 'function') req.session.save = cb => cb && cb();
-  }
-  next();
-});
+// 3. Sessões (Usando a versão mais robusta com SQLite)
+app.use(
+  session({
+    store: new SQLiteStore({
+      db: 'database.sqlite',
+      dir: './',
+    }),
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: isProduction, 
+      httpOnly: true,
+      sameSite: isProduction ? 'none' : 'lax',
+      proxy: isProduction,
+      maxAge: 24 * 60 * 60 * 1000, // 24 horas
+    },
+  })
+);
 
-/* 4) Passport */
+// 4. Passport.js
 app.use(passport.initialize());
 app.use(passport.session());
 
-/* 5) Health */
-app.get('/GetHealth', (_, res) => res.send('Healthy'));
+// --- Associações dos Modelos ---
+Campaign.hasMany(Piece);
+Piece.belongsTo(Campaign);
 
-/* 6) Auth + /me */
-app.use(googleAuthRouter);
-app.use('/me', meRouter);
+// --- ROTAS DA APLICAÇÃO (Corrigidas) ---
+app.use(googleAuthRouter); // Rota de autenticação do Google
+app.use('/me', meRouter);   // Rota para verificar o usuário logado
 
-/* 7) (resto pode ficar protegido – não vamos usar agora) */
+// Rotas protegidas pelo middleware `ensureAuth`
 app.use('/campaigns', ensureAuth, campaignRoutes);
-app.use('/approval', ensureAuth, approvalRoutes);
-app.use('/clients', ensureAuth, clientManagementRoutes);
 
-/* 8) 404 */
-app.use((req, res) => res.status(404).json({ error: 'Not found' }));
+// Middleware para tratamento de erros
+app.use(errorHandler);
 
-/* 9) start */
+/* ========== Inicialização do Servidor ========== */
 const PORT = process.env.PORT || 3000;
-if (require.main === module) {
-  (async () => {
-    try {
-      await sequelize.sync();
-      app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
-    } catch (err) {
-      console.error('Falha ao iniciar:', err);
-      process.exit(1);
-    }
-  })();
+
+async function start() {
+  try {
+    await sequelize.sync();
+    app.listen(PORT, () => {
+      console.log(`[SUCESSO] Servidor rodando na porta ${PORT}`);
+      console.log(`[INFO] Ambiente: ${process.env.NODE_ENV || 'development'}`);
+    });
+  } catch (error) {
+    console.error('[ERRO] Não foi possível iniciar o servidor:', error);
+  }
 }
 
-module.exports = app;
+start();

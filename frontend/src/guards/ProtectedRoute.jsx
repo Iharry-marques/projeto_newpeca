@@ -1,24 +1,24 @@
-import { useEffect, useState } from 'react';
+// Em: frontend/src/guards/ProtectedRoute.jsx
+
+import React from 'react';
 import { Navigate } from 'react-router-dom';
-import api from '../api/client';
+import { useMe } from '../hooks/useMe'; // Verifique se o caminho para o hook useMe está correto
+import Spinner from '../pages/Spinner';
 
-export default function ProtectedRoute({ children }) {
-  const [state, setState] = useState({ loading: true, ok: false });
+function ProtectedRoute({ children }) {
+  const { data, loading, error } = useMe();
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const { data } = await api.get('/me');
-        if (mounted) setState({ loading: false, ok: !!data?.user });
-      } catch {
-        if (mounted) setState({ loading: false, ok: false });
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
+  if (loading) {
+    return <Spinner />; // Mostra um spinner enquanto verifica a autenticação
+  }
 
-  if (state.loading) return null; // opcional: spinner
-  if (!state.ok) return <Navigate to="/login" replace />;
+  if (error || !data?.authenticated) {
+    // Se der erro ou não estiver autenticado, redireciona para o login
+    return <Navigate to="/login" replace />;
+  }
+
+  // Se estiver tudo certo, mostra a página solicitada
   return children;
 }
+
+export default ProtectedRoute;

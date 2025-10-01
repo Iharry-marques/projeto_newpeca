@@ -1,26 +1,50 @@
-// frontend/src/pages/App.jsx
-import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import LoginPage from "./Login.jsx";
-import HomePage from "./HomePage.jsx";                 // sua página estilizada
-import ProtectedRoute from "../guards/ProtectedRoute.jsx";
+// Em: frontend/src/pages/App.jsx
 
-export default function App() {
+import React from 'react';
+import { Routes, Route } from 'react-router-dom';
+
+// Importe suas páginas e componentes
+// Os caminhos aqui estão corretos porque todos os arquivos estão na mesma pasta 'pages'
+import ProtectedRoute from '../guards/ProtectedRoute'; 
+import LoginPage from './Login'; 
+import HomePage from './HomePage'; 
+import ClientLoginPage from './ClientLoginPage';
+import ClientDashboard from './ClientDashboard';
+import ClientApprovalPage from './ClientApprovalPage';
+import ClientManagementPage from './ClientManagementPage';
+
+function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route
-          path="/suno"
-          element={
-            <ProtectedRoute>
-              <HomePage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="*" element={<div style={{ padding: 24 }}>404</div>} />
-      </Routes>
-    </BrowserRouter>
+    <Routes>
+      {/* Rota Raiz e de Login do Suno */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route 
+        path="/" 
+        element={
+          <ProtectedRoute>
+            <HomePage />
+          </ProtectedRoute>
+        } 
+      />
+      
+      {/* Outras rotas do Suno (Admin) */}
+      <Route 
+        path="/clients" 
+        element={
+          <ProtectedRoute>
+            <ClientManagementPage />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Rotas do Portal do Cliente */}
+      <Route path="/client/login" element={<ClientLoginPage />} />
+      <Route path="/client/dashboard" element={<ClientDashboard />} />
+      <Route path="/client/approval/:hash" element={<ClientApprovalPage />} />
+
+      {/* Adicione outras rotas aqui conforme necessário */}
+    </Routes>
   );
 }
+
+export default App;

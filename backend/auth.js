@@ -50,13 +50,14 @@ googleAuthRouter.get(
   passport.authenticate('google', { scope: ['profile', 'email'] })
 );
 
+
 googleAuthRouter.get(
   '/auth/google/callback',
   passport.authenticate('google', { failureRedirect: `${FRONTEND_URL}/login`, session: true }),
   (req, res) => {
     console.log('[AUTH] callback OK, user=', req.user?.email);
-    // redireciona para a área Suno
-    return res.redirect(`${FRONTEND_URL}/suno`);
+    // MUDANÇA AQUI: Redireciona para a raiz do frontend, onde a HomePage está.
+    return res.redirect(FRONTEND_URL); 
   }
 );
 
