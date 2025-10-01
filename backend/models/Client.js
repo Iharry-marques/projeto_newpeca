@@ -1,7 +1,7 @@
 // backend/models/Client.js
 
 const { DataTypes } = require('sequelize');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 module.exports = (sequelize) => {
   const Client = sequelize.define('Client', {

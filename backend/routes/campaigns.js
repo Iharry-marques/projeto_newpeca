@@ -1,45 +1,64 @@
-// backend/routes/campaigns.js - Atualizado com novo fluxo
+// backend/routes/campaigns.js
+// Rotas de campanhas (Suno/Cliente) + upload + export PDF
 
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
+
 const path = require('path');
 const fs = require('fs');
-const { Campaign, Piece, Client, CampaignClient, User } = require('../models');
-const puppeteer = require('puppeteer'); // npm install puppeteer
 
-// Middleware de verificação de autenticação
+const multer = require('multer');             // npm i multer
+const puppeteer = require('puppeteer');       // npm i puppeteer
+
+const { Campaign, Piece, Client, CampaignClient, User } = require('../models');
+
+// ---------- Auth guard ----------
 function ensureAuthenticated(req, res, next) {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  res.status(401).json({ error: 'Usuário não autenticado.' });
+  // Passport preenche req.isAuthenticated/req.user quando a sessão está válida
+  if (req.isAuthenticated && req.isAuthenticated()) return next();
+  if (req.user) return next();
+  return res.status(401).json({ error: 'Usuário não autenticado.' });
 }
 
-const upload = multer({ dest: path.join(__dirname, '../uploads') });
+// ---------- Upload (em disco, por enquanto) ----------
+const uploadDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
-/* ========== CAMPANHAS ========== */
+const upload = multer({ dest: uploadDir });
 
-// CRIAR NOVA CAMPANHA
+// ---------- Helper Puppeteer ----------
+async function openBrowser() {
+  const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+  // Em Cloud Run use args sem sandbox; local também funciona.
+  return puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    executablePath: execPath, // se não definido, usa Chromium baixado pelo Puppeteer
+  });
+}
+
+/* ================== CAMPANHAS ================== */
+
+// Criar campanha
 router.post('/', ensureAuthenticated, async (req, res) => {
   try {
     const { name, client, creativeLine, startDate, endDate, notes } = req.body;
-    
+
     if (!name || !client) {
-      return res.status(400).json({ 
-        error: 'Nome e cliente da campanha são obrigatórios.' 
-      });
+      return res.status(400).json({ error: 'Nome e cliente da campanha são obrigatórios.' });
     }
 
-    const campaign = await Campaign.create({ 
-      name, 
-      client, 
-      creativeLine,
+    const campaign = await Campaign.create({
+      name,
+      client,
+      creativeLine: creativeLine || null,
       startDate: startDate || null,
       endDate: endDate || null,
       notes: notes || null,
       createdBy: req.user.id,
-      status: 'draft'
+      status: 'draft',
     });
 
     res.status(201).json(campaign);
@@ -49,24 +68,21 @@ router.post('/', ensureAuthenticated, async (req, res) => {
   }
 });
 
-// BUSCAR TODAS AS CAMPANHAS (do usuário logado)
+// Listar campanhas do usuário logado
 router.get('/', ensureAuthenticated, async (req, res) => {
   try {
     const campaigns = await Campaign.findAll({
       where: { createdBy: req.user.id },
       include: [
-        {
-          model: Piece,
-          attributes: ['id', 'status']
-        },
+        { model: Piece, attributes: ['id', 'status'] },
         {
           model: Client,
           as: 'authorizedClients',
           through: { attributes: ['assignedAt'] },
-          attributes: ['id', 'name', 'email']
-        }
+          attributes: ['id', 'name', 'email'],
+        },
       ],
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
     });
     res.json(campaigns);
   } catch (err) {
@@ -75,7 +91,7 @@ router.get('/', ensureAuthenticated, async (req, res) => {
   }
 });
 
-// BUSCAR CAMPANHA ESPECÍFICA
+// Buscar campanha específica
 router.get('/:id', ensureAuthenticated, async (req, res) => {
   try {
     const campaign = await Campaign.findOne({
@@ -83,20 +99,18 @@ router.get('/:id', ensureAuthenticated, async (req, res) => {
       include: [
         {
           model: Piece,
-          order: [['order', 'ASC'], ['createdAt', 'ASC']]
+          order: [['order', 'ASC'], ['createdAt', 'ASC']],
         },
         {
           model: Client,
           as: 'authorizedClients',
           through: { attributes: ['assignedAt', 'canApprove', 'canComment', 'clientStatus'] },
-          attributes: ['id', 'name', 'email', 'company']
-        }
-      ]
+          attributes: ['id', 'name', 'email', 'company'],
+        },
+      ],
     });
 
-    if (!campaign) {
-      return res.status(404).json({ error: 'Campanha não encontrada' });
-    }
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
 
     res.json(campaign);
   } catch (err) {
@@ -105,51 +119,47 @@ router.get('/:id', ensureAuthenticated, async (req, res) => {
   }
 });
 
-/* ========== UPLOAD DE PEÇAS ========== */
+/* ================== UPLOAD DE PEÇAS ================== */
 
-// UPLOAD DE PEÇAS (estado inicial: 'uploaded')
+// Upload (estado inicial: 'uploaded')
 router.post('/:id/upload', ensureAuthenticated, upload.array('files'), async (req, res) => {
   try {
     const campaignId = req.params.id;
-    
-    // Verificar se campanha existe e pertence ao usuário
+
     const campaign = await Campaign.findOne({
-      where: { id: campaignId, createdBy: req.user.id }
+      where: { id: campaignId, createdBy: req.user.id },
     });
-    
-    if (!campaign) {
-      return res.status(404).json({ error: 'Campanha não encontrada' });
-    }
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
 
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     }
 
     const pieces = await Promise.all(
-      req.files.map(async (file) => {
-        return await Piece.create({
+      req.files.map((file) =>
+        Piece.create({
           filename: file.filename,
           originalName: file.originalname,
           mimetype: file.mimetype,
           size: file.size,
-          status: 'uploaded', // Estado inicial
+          status: 'uploaded',
           CampaignId: campaignId,
-        });
-      })
+        })
+      )
     );
 
     res.json({
       success: true,
       message: `${pieces.length} arquivo(s) enviado(s) com sucesso`,
-      pieces: pieces.map(piece => ({
-        id: piece.id,
-        filename: piece.filename,
-        originalName: piece.originalName,
-        mimetype: piece.mimetype,
-        size: piece.size,
-        status: piece.status,
-        createdAt: piece.createdAt
-      }))
+      pieces: pieces.map((p) => ({
+        id: p.id,
+        filename: p.filename,
+        originalName: p.originalName,
+        mimetype: p.mimetype,
+        size: p.size,
+        status: p.status,
+        createdAt: p.createdAt,
+      })),
     });
   } catch (error) {
     console.error('Erro no upload:', error);
@@ -157,151 +167,100 @@ router.post('/:id/upload', ensureAuthenticated, upload.array('files'), async (re
   }
 });
 
-// ANEXAR PEÇAS À CAMPANHA (uploaded → attached)
+// Marcar peças como anexadas (uploaded → attached)
 router.post('/:id/attach-pieces', ensureAuthenticated, async (req, res) => {
   try {
     const campaignId = req.params.id;
-    const { pieceIds } = req.body; // Array de IDs das peças
+    const { pieceIds } = req.body;
 
     if (!pieceIds || !Array.isArray(pieceIds) || pieceIds.length === 0) {
       return res.status(400).json({ error: 'IDs das peças são obrigatórios' });
     }
 
-    // Verificar campanha
     const campaign = await Campaign.findOne({
-      where: { id: campaignId, createdBy: req.user.id }
+      where: { id: campaignId, createdBy: req.user.id },
     });
-    
-    if (!campaign) {
-      return res.status(404).json({ error: 'Campanha não encontrada' });
-    }
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
 
-    // Atualizar peças para 'attached'
     const [updatedCount] = await Piece.update(
-      { 
-        status: 'attached',
-        attachedAt: new Date()
-      },
-      { 
-        where: { 
-          id: pieceIds,
-          CampaignId: campaignId,
-          status: 'uploaded' // Só pode anexar peças uploadadas
-        } 
+      { status: 'attached', attachedAt: new Date() },
+      {
+        where: { id: pieceIds, CampaignId: campaignId, status: 'uploaded' },
       }
     );
 
     if (updatedCount === 0) {
-      return res.status(400).json({ 
-        error: 'Nenhuma peça foi anexada. Verifique se as peças existem e estão no estado correto.' 
+      return res.status(400).json({
+        error: 'Nenhuma peça foi anexada. Verifique se as peças existem e estão no estado correto.',
       });
     }
 
-    res.json({
-      success: true,
-      message: `${updatedCount} peça(s) anexada(s) à campanha`,
-      attachedCount: updatedCount
-    });
+    res.json({ success: true, message: `${updatedCount} peça(s) anexada(s)`, attachedCount: updatedCount });
   } catch (error) {
     console.error('Erro ao anexar peças:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
-// DESANEXAR PEÇAS (attached → uploaded)
+// Desanexar peças (attached → uploaded)
 router.post('/:id/detach-pieces', ensureAuthenticated, async (req, res) => {
   try {
     const campaignId = req.params.id;
     const { pieceIds } = req.body;
 
     const [updatedCount] = await Piece.update(
-      { 
-        status: 'uploaded',
-        attachedAt: null
-      },
-      { 
-        where: { 
-          id: pieceIds,
-          CampaignId: campaignId,
-          status: 'attached'
-        } 
+      { status: 'uploaded', attachedAt: null },
+      {
+        where: { id: pieceIds, CampaignId: campaignId, status: 'attached' },
       }
     );
 
-    res.json({
-      success: true,
-      message: `${updatedCount} peça(s) desanexada(s)`,
-      detachedCount: updatedCount
-    });
+    res.json({ success: true, message: `${updatedCount} peça(s) desanexada(s)`, detachedCount: updatedCount });
   } catch (error) {
     console.error('Erro ao desanexar peças:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
-/* ========== ENVIO PARA CLIENTE ========== */
+/* ================== ENVIO PARA CLIENTE ================== */
 
-// ENVIAR CAMPANHA PARA APROVAÇÃO
 router.post('/:id/send-for-approval', ensureAuthenticated, async (req, res) => {
   try {
     const campaignId = req.params.id;
-    const { clientIds } = req.body; // Array opcional de IDs de clientes
+    const { clientIds } = req.body; // opcional
 
-    // Buscar campanha com peças anexadas
     const campaign = await Campaign.findOne({
       where: { id: campaignId, createdBy: req.user.id },
-      include: [
-        {
-          model: Piece,
-          where: { status: 'attached' },
-          required: false
-        }
-      ]
+      include: [{ model: Piece, where: { status: 'attached' }, required: false }],
     });
 
-    if (!campaign) {
-      return res.status(404).json({ error: 'Campanha não encontrada' });
-    }
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
 
     if (!campaign.Pieces || campaign.Pieces.length === 0) {
-      return res.status(400).json({ 
-        error: 'Não é possível enviar uma campanha sem peças anexadas' 
-      });
+      return res.status(400).json({ error: 'Não é possível enviar uma campanha sem peças anexadas' });
     }
 
     if (campaign.status !== 'draft') {
-      return res.status(400).json({ 
-        error: 'Apenas campanhas em rascunho podem ser enviadas' 
-      });
+      return res.status(400).json({ error: 'Apenas campanhas em rascunho podem ser enviadas' });
     }
 
-    // Atualizar status das peças anexadas para 'pending'
     await Piece.update(
       { status: 'pending' },
-      { 
-        where: { 
-          CampaignId: campaignId,
-          status: 'attached'
-        } 
-      }
+      { where: { CampaignId: campaignId, status: 'attached' } }
     );
 
-    // Atualizar campanha
-    await campaign.update({
-      status: 'sent_for_approval',
-      sentForApprovalAt: new Date()
-    });
+    await campaign.update({ status: 'sent_for_approval', sentForApprovalAt: new Date() });
 
-    // Se clientIds foram especificados, criar ACL
     if (clientIds && clientIds.length > 0) {
-      const assignmentPromises = clientIds.map(clientId => 
-        CampaignClient.upsert({
-          campaignId: campaignId,
-          clientId: clientId,
-          assignedAt: new Date()
-        })
+      await Promise.all(
+        clientIds.map((clientId) =>
+          CampaignClient.upsert({
+            campaignId,
+            clientId,
+            assignedAt: new Date(),
+          })
+        )
       );
-      await Promise.all(assignmentPromises);
     }
 
     res.json({
@@ -313,8 +272,8 @@ router.post('/:id/send-for-approval', ensureAuthenticated, async (req, res) => {
         status: 'sent_for_approval',
         approvalLink: `${process.env.FRONTEND_URL}/client/approval/${campaign.approvalHash}`,
         pieceCount: campaign.Pieces.length,
-        sentForApprovalAt: campaign.sentForApprovalAt
-      }
+        sentForApprovalAt: campaign.sentForApprovalAt,
+      },
     });
   } catch (error) {
     console.error('Erro ao enviar campanha:', error);
@@ -322,135 +281,106 @@ router.post('/:id/send-for-approval', ensureAuthenticated, async (req, res) => {
   }
 });
 
-// EXPORTAR PDF DAS PEÇAS APROVADAS
+/* ================== EXPORTAR PDF ================== */
+
 router.get('/:id/export-pdf', ensureAuthenticated, async (req, res) => {
   try {
     const campaignId = req.params.id;
 
     const campaign = await Campaign.findOne({
-      where: { 
-        id: campaignId, 
-        createdBy: req.user.id 
-      },
-      include: [{
-        model: Piece,
-        where: { 
-          status: 'approved' 
-        },
-        required: false
-      }]
+      where: { id: campaignId, createdBy: req.user.id },
+      include: [{ model: Piece, where: { status: 'approved' }, required: false }],
     });
 
-    if (!campaign) {
-      return res.status(404).json({ error: 'Campanha não encontrada' });
-    }
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
 
     const approvedPieces = campaign.Pieces || [];
-    
     if (approvedPieces.length === 0) {
       return res.status(400).json({ error: 'Não há peças aprovadas para exportar' });
     }
 
-    // Gerar HTML para o PDF
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Peças Aprovadas - ${campaign.name}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 40px; }
-          .header { text-align: center; border-bottom: 2px solid #ffc801; padding-bottom: 20px; margin-bottom: 30px; }
-          .campaign-info { margin-bottom: 30px; }
-          .piece { margin-bottom: 40px; page-break-inside: avoid; }
-          .piece img { max-width: 100%; height: auto; border: 1px solid #ddd; }
-          .piece-info { margin-top: 10px; }
-          .approved-stamp { color: green; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>${campaign.name}</h1>
-          <h2>Peças Criativas Aprovadas</h2>
-        </div>
-        
-        <div class="campaign-info">
-          <p><strong>Cliente:</strong> ${campaign.client}</p>
-          ${campaign.creativeLine ? `<p><strong>Linha Criativa:</strong> ${campaign.creativeLine}</p>` : ''}
-          <p><strong>Data de Exportação:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
-          <p><strong>Total de Peças Aprovadas:</strong> ${approvedPieces.length}</p>
-        </div>
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Peças Aprovadas - ${campaign.name}</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 40px; }
+  .header { text-align: center; border-bottom: 2px solid #ffc801; padding-bottom: 20px; margin-bottom: 30px; }
+  .campaign-info { margin-bottom: 30px; }
+  .piece { margin-bottom: 40px; page-break-inside: avoid; }
+  .piece img { max-width: 100%; height: auto; border: 1px solid #ddd; }
+  .piece-info { margin-top: 10px; }
+  .approved-stamp { color: green; font-weight: bold; }
+</style></head>
+<body>
+  <div class="header">
+    <h1>${campaign.name}</h1>
+    <h2>Peças Criativas Aprovadas</h2>
+  </div>
 
-        ${approvedPieces.map((piece, index) => `
-          <div class="piece">
-            <h3>Peça ${index + 1} - ${piece.originalName || piece.filename}</h3>
-            ${piece.mimetype.startsWith('image/') ? 
-              `<img src="${process.env.FRONTEND_URL}/campaigns/files/${piece.filename}" alt="${piece.originalName}">` :
-              `<div style="padding: 40px; border: 1px solid #ddd; text-align: center; background-color: #f5f5f5;">
-                <p><strong>Arquivo:</strong> ${piece.originalName || piece.filename}</p>
-                <p><strong>Tipo:</strong> ${piece.mimetype}</p>
-                <p><strong>Tamanho:</strong> ${Math.round(piece.size / 1024)} KB</p>
-              </div>`
-            }
-            <div class="piece-info">
-              <p class="approved-stamp">✅ APROVADA</p>
-              ${piece.comment ? `<p><strong>Comentário:</strong> ${piece.comment}</p>` : ''}
-              <p><strong>Data de Aprovação:</strong> ${new Date(piece.reviewedAt).toLocaleDateString('pt-BR')}</p>
-            </div>
-          </div>
-        `).join('')}
-        
-        <div style="margin-top: 50px; text-align: center; color: #666; font-size: 12px;">
-          <p>Relatório gerado pelo sistema Aprobi em ${new Date().toLocaleString('pt-BR')}</p>
-        </div>
-      </body>
-      </html>
-    `;
+  <div class="campaign-info">
+    <p><strong>Cliente:</strong> ${campaign.client}</p>
+    ${campaign.creativeLine ? `<p><strong>Linha Criativa:</strong> ${campaign.creativeLine}</p>` : ''}
+    <p><strong>Data de Exportação:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
+    <p><strong>Total de Peças Aprovadas:</strong> ${approvedPieces.length}</p>
+  </div>
 
-    // Gerar PDF com Puppeteer
-    const browser = await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    
+  ${approvedPieces
+    .map((piece, index) => {
+      const isImage = (piece.mimetype || '').startsWith('image/');
+      const src = `${process.env.FRONTEND_URL}/campaigns/files/${piece.filename}`;
+      return `<div class="piece">
+        <h3>Peça ${index + 1} - ${piece.originalName || piece.filename}</h3>
+        ${
+          isImage
+            ? `<img src="${src}" alt="${piece.originalName || piece.filename}">`
+            : `<div style="padding: 40px; border: 1px solid #ddd; text-align: center; background-color: #f5f5f5;">
+                 <p><strong>Arquivo:</strong> ${piece.originalName || piece.filename}</p>
+                 <p><strong>Tipo:</strong> ${piece.mimetype}</p>
+                 <p><strong>Tamanho:</strong> ${Math.round((piece.size || 0) / 1024)} KB</p>
+               </div>`
+        }
+        <div class="piece-info">
+          <p class="approved-stamp">✅ APROVADA</p>
+          ${piece.comment ? `<p><strong>Comentário:</strong> ${piece.comment}</p>` : ''}
+          ${piece.reviewedAt ? `<p><strong>Data de Aprovação:</strong> ${new Date(piece.reviewedAt).toLocaleDateString('pt-BR')}</p>` : ''}
+        </div>
+      </div>`;
+    })
+    .join('')}
+
+  <div style="margin-top: 50px; text-align: center; color: #666; font-size: 12px;">
+    <p>Relatório gerado pelo sistema Aprobi em ${new Date().toLocaleString('pt-BR')}</p>
+  </div>
+</body></html>`;
+
+    const browser = await openBrowser();
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
-    
+
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
-      margin: {
-        top: '20mm',
-        right: '15mm',
-        bottom: '20mm',
-        left: '15mm'
-      }
+      margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' },
     });
 
     await browser.close();
 
-    // Configurar headers para download
     const filename = `${campaign.name.replace(/[^a-zA-Z0-9]/g, '_')}_aprovadas.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdfBuffer.length);
-    
-    res.send(pdfBuffer);
-    
+    return res.send(pdfBuffer);
   } catch (error) {
     console.error('Erro ao gerar PDF:', error);
-    res.status(500).json({ error: 'Erro interno do servidor ao gerar PDF' });
+    return res.status(500).json({ error: 'Erro interno do servidor ao gerar PDF' });
   }
 });
 
-/* ========== ARQUIVOS ESTÁTICOS ========== */
+/* ================== ARQUIVOS ESTÁTICOS ================== */
 
-// Servir arquivos
+// Servir arquivos enviados (pasta uploads/)
 router.get('/files/:filename', (req, res) => {
-  const filePath = path.join(__dirname, '../uploads', req.params.filename);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'Arquivo não encontrado' });
-  }
+  const filePath = path.join(uploadDir, req.params.filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Arquivo não encontrado' });
   res.sendFile(filePath);
 });
 

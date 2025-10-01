@@ -15,7 +15,7 @@ async function createClient() {
       email: 'joao@empresacliente.com',
       password: 'senha123', // Será criptografada automaticamente
       company: 'Empresa Cliente Ltda',
-      isActive: true,
+      isActive: true, 
     };
 
     // Verificar se já existe

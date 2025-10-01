@@ -1,21 +1,25 @@
 // frontend/src/guards/ProtectedRoute.jsx
+import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useMe } from '../../hooks/useMe';
+import api from '../api/client';
 
-export default function ProtectedRoute({ allowRoles, children }) {
-  const { loading, authenticated, user } = useMe();
+export default function ProtectedRoute({ children }) {
+  const [state, setState] = useState({ loading: true, ok: false });
 
-  if (loading) return <div style={{ padding: 24 }}>Carregando…</div>;
-  if (!authenticated) {
-    // manda para o login do backend
-    window.location.href = 'http://localhost:3000/auth/google';
-    return null;
-  }
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const { data } = await api.get('/me'); // manda cookie
+        if (mounted) setState({ loading: false, ok: !!data?.user });
+      } catch {
+        if (mounted) setState({ loading: false, ok: false });
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
-  if (allowRoles && !allowRoles.includes(user?.role)) {
-    // Se logou como CLIENT e tentou /suno, manda pro /cliente (e vice-versa)
-    return <Navigate to={user?.role === 'SUNO' ? '/cliente' : '/suno'} replace />;
-  }
-
+  if (state.loading) return null; // ou um Spinner
+  if (!state.ok) return <Navigate to="/login" replace />;
   return children;
 }

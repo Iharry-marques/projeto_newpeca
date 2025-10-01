@@ -5,8 +5,8 @@ export function useMe() {
   const [data, setData] = useState({ loading: true, authenticated: false, user: null, error: null });
 
   useEffect(() => {
-    let cancelled = false;
-    async function run() {
+    let cancelled = false; 
+    (async () => {
       try {
         const res = await fetch('http://localhost:3000/me', { credentials: 'include' });
         if (!res.ok) {
@@ -18,8 +18,7 @@ export function useMe() {
       } catch (e) {
         if (!cancelled) setData({ loading: false, authenticated: false, user: null, error: String(e) });
       }
-    }
-    run();
+    })();
     return () => { cancelled = true; };
   }, []);
 
