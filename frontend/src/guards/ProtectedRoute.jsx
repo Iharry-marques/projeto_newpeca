@@ -1,4 +1,3 @@
-// frontend/src/guards/ProtectedRoute.jsx
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import api from '../api/client';
@@ -10,7 +9,7 @@ export default function ProtectedRoute({ children }) {
     let mounted = true;
     (async () => {
       try {
-        const { data } = await api.get('/me'); // manda cookie
+        const { data } = await api.get('/me');
         if (mounted) setState({ loading: false, ok: !!data?.user });
       } catch {
         if (mounted) setState({ loading: false, ok: false });
@@ -19,7 +18,7 @@ export default function ProtectedRoute({ children }) {
     return () => { mounted = false; };
   }, []);
 
-  if (state.loading) return null; // ou um Spinner
+  if (state.loading) return null; // opcional: spinner
   if (!state.ok) return <Navigate to="/login" replace />;
   return children;
 }

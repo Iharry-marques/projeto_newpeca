@@ -16,7 +16,7 @@ import {
   Search,
   X
 } from 'lucide-react';
-//import aprobiLogo from '.';
+import aprobiLogo from "../assets/aprobi-logo.jpg";
 
 const ClientManagementPage = () => {
   const [clients, setClients] = useState([]);

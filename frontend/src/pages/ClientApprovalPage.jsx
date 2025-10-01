@@ -18,7 +18,7 @@ import {
   Sparkles,
   Send
 } from 'lucide-react';
-import aprobiLogo from './assets/aprobi-logo.jpg';
+import aprobiLogo from "../assets/aprobi-logo.jpg";
 
 // Estados de validação atualizados
 const VALIDATION_STATUSES = {

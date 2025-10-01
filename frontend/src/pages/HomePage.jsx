@@ -1,7 +1,7 @@
 // frontend/src/pages/HomePage.jsx
 import React from "react";
 import { Link } from "react-router-dom";
-import useMe from "../hooks/useMe.js"; // já existe no seu projeto
+import { useMe } from '../hooks/useMe';
 
 export default function HomePage() {
   const { data, loading, error } = useMe();

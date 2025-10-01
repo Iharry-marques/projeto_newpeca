@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Lock, User, Eye, EyeOff } from 'lucide-react';
-import aprobiLogo from './assets/aprobi-logo.jpg';
+import aprobiLogo from "../assets/aprobi-logo.jpg";
 
 const ClientLoginPage = () => {
   const [email, setEmail] = useState('');
