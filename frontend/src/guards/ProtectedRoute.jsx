@@ -3,7 +3,7 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useMe } from '../hooks/useMe';
-import Spinner from '../pages/Spinner';
+import Spinner from '../components/Spinner';
 
 function ProtectedRoute({ children }) {
   // MUDANÇA AQUI: Recebemos o objeto inteiro do hook
