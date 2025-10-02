@@ -1,862 +1,508 @@
-import React, { useState, useCallback, useEffect } from 'react';
-// ADICIONEI ÍCONES NOVOS AQUI
-import { Upload, Check, Edit3, Download, FileText, Image, Video, File, BarChart3, X, Save, Eye, ChevronDown, PlusCircle, Briefcase } from 'lucide-react';
+import React, { useState, useCallback, useEffect, Fragment } from 'react';
+import { Listbox, Transition } from '@headlessui/react';
+import { Upload, Check, FileText, Image, Video, File, X, ChevronDown, PlusCircle, Briefcase, FolderPlus, Cloud, Trash2, XCircle } from 'lucide-react';
 import aprobiLogo from '../assets/aprobi-logo.jpg';
 import CampaignSelector from '../components/CampaignSelector';
 import CampaignPreviewCard from '../components/CampaignPreviewCard';
 
+// -- COMPONENTES INTERNOS --
 
-// Tipos de status de validação
-const VALIDATION_STATUSES = {
-  PENDING: 'pending',
-  APPROVED: 'approved',
-  NEEDS_ADJUSTMENT: 'needs_adjustment',
-  REJECTED: 'rejected'
-};
+const clients = [
+    { name: 'AMERICANAS' }, { name: 'ARAMIS' }, { name: 'CANTU' }, { name: 'COGNA' }, { name: 'ESPORTE DA SORTE' },
+    { name: 'HASDEX' }, { name: 'HORTIFRUTI NATURAL DA TERRA' }, { name: 'IDEAZARVOS' }, { name: 'KEETA' },
+    { name: 'MASTERCARD' }, { name: 'O BOTICARIO' }, { name: 'RD' }, { name: 'SAMSUNG' },
+    { name: 'SAMSUNG E STORE' }, { name: 'SICREDI' }, { name: 'VIVO' },
+].sort((a, b) => a.name.localeCompare(b.name));
 
-// Cores para cada status com nova paleta
-const STATUS_COLORS = {
-  [VALIDATION_STATUSES.PENDING]: 'bg-slate-100 text-slate-700 border-slate-300',
-  [VALIDATION_STATUSES.APPROVED]: 'bg-emerald-100 text-emerald-700 border-emerald-300',
-  [VALIDATION_STATUSES.NEEDS_ADJUSTMENT]: 'bg-amber-100 text-amber-700 border-amber-300',
-  [VALIDATION_STATUSES.REJECTED]: 'bg-rose-100 text-rose-700 border-rose-300'
-};
-
-// Labels para os status
-const STATUS_LABELS = {
-  [VALIDATION_STATUSES.PENDING]: 'Pendentes',
-  [VALIDATION_STATUSES.APPROVED]: 'Aprovados',
-  [VALIDATION_STATUSES.NEEDS_ADJUSTMENT]: 'Precisa Ajustes',
-  [VALIDATION_STATUSES.REJECTED]: 'Reprovado'
-};
-
-// Componente para upload de arquivos
-// ADICIONEI A PROP 'disabled' PARA DESABILITAR O UPLOAD SE NENHUMA CAMPANHA ESTIVER SELECIONADA
-const FileUpload = ({ onFilesAdded, disabled }) => {
-  const [isDragging, setIsDragging] = useState(false);
-
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    if (disabled) return;
-    setIsDragging(false);
-    
-    const files = Array.from(e.dataTransfer.files);
-    onFilesAdded(files);
-  }, [onFilesAdded, disabled]);
-
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault();
-    if (disabled) return;
-    setIsDragging(true);
-  }, [disabled]);
-
-  const handleDragLeave = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const handleFileInput = useCallback((e) => {
-    if (disabled) return;
-    const files = Array.from(e.target.files);
-    onFilesAdded(files);
-  }, [onFilesAdded, disabled]);
-
-  const disabledClasses = disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-[#ffc801]/60 hover:bg-slate-50';
-
-  return (
-    <div className="mb-8">
-      <div
-        className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300 ${
-          isDragging && !disabled
-            ? 'border-[#ffc801] bg-[#ffc801]/5 scale-105' 
-            : 'border-slate-300'
-        } ${disabledClasses}`}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-      >
-        <div className={`mx-auto w-20 h-20 bg-gradient-to-br from-[#ffc801] to-[#ffb700] rounded-full flex items-center justify-center mb-6 shadow-lg ${disabled ? 'grayscale' : ''}`}>
-          <Upload className="h-10 w-10 text-white" />
-        </div>
-        <h3 className="text-xl font-bold text-slate-800 mb-2">
-          {disabled ? 'Selecione uma campanha para começar' : 'Arraste e solte seus arquivos aqui'}
-        </h3>
-        <p className="text-slate-600 mb-6 max-w-md mx-auto">
-          {disabled ? 'Após selecionar uma campanha, você poderá fazer o upload das peças.' : 'Suporte para imagens, vídeos e PDFs. Arraste múltiplos arquivos ou clique para selecionar.'}
-        </p>
-        <input
-          type="file"
-          multiple
-          onChange={handleFileInput}
-          className="hidden"
-          id="file-input"
-          accept="image/*,video/*,.pdf"
-          disabled={disabled}
-        />
-        <label
-          htmlFor="file-input"
-          className={`inline-flex items-center px-8 py-4 bg-gradient-to-r from-[#ffc801] to-[#ffb700] text-white font-semibold rounded-xl transition-all duration-200 ${disabled ? 'cursor-not-allowed grayscale' : 'cursor-pointer hover:shadow-lg transform hover:scale-105'}`}
-        >
-          <Upload className="w-5 h-5 mr-2" />
-          Selecionar Arquivos
-        </label>
-      </div>
-    </div>
-  );
-};
-
-// --- NENHUMA MUDANÇA NOS COMPONENTES ABAIXO ---
-
-// Componente para mostrar ícone do tipo de arquivo
 const FileTypeIcon = ({ fileType }) => {
-  if (fileType.startsWith('image/')) {
-    return <Image className="w-5 h-5 text-blue-500" />;
-  } else if (fileType.startsWith('video/')) {
-    return <Video className="w-5 h-5 text-purple-500" />;
-  } else if (fileType === 'application/pdf') {
-    return <FileText className="w-5 h-5 text-red-500" />;
-  }
-  return <File className="w-5 h-5 text-slate-500" />;
+    if (fileType.startsWith('image/')) return <Image className="w-5 h-5 text-blue-500" />;
+    if (fileType.startsWith('video/')) return <Video className="w-5 h-5 text-purple-500" />;
+    return <File className="w-5 h-5 text-slate-500" />;
 };
 
-// Componente pop-up para validação
-const FilePopup = ({ file, validation, onValidationChange, onClose, onSave }) => {
-  const [localValidation, setLocalValidation] = useState({
-    status: validation?.status || VALIDATION_STATUSES.PENDING,
-    comment: validation?.comment || ''
-  });
+const FileViewer = ({ file, onOpenPopup, isSelectionMode, isSelected, onSelect }) => {
+    const handleCardClick = () => {
+        if (isSelectionMode) {
+            onSelect(file.id);
+        } else {
+            onOpenPopup(file);
+        }
+    };
 
-  const handleStatusChange = (status) => {
-    setLocalValidation(prev => ({ ...prev, status }));
-  };
+    const renderPreview = () => {
+        if (file.type.startsWith('image/')) return <img src={file.url} alt={file.name} className="w-full h-48 object-cover rounded-xl" />;
+        if (file.type.startsWith('video/')) return <div className="w-full h-48 bg-purple-100 rounded-xl flex items-center justify-center"><Video className="w-16 h-16 text-purple-400" /></div>;
+        return <div className="w-full h-48 bg-slate-100 rounded-xl flex items-center justify-center"><File className="w-16 h-16 text-slate-400" /></div>;
+    };
 
-  const handleCommentChange = (comment) => {
-    setLocalValidation(prev => ({ ...prev, comment }));
-  };
-
-  const handleSave = () => {
-    onSave(file.id, localValidation);
-    onClose();
-  };
-
-  const renderContent = () => {
-    if (file.type.startsWith('image/')) {
-      return (
-        <img
-          src={file.url}
-          alt={file.name}
-          className="max-w-full max-h-[60vh] object-contain rounded-xl shadow-lg"
-        />
-      );
-    } else if (file.type.startsWith('video/')) {
-      return (
-        <video
-          src={file.url}
-          controls
-          className="max-w-full max-h-[60vh] object-contain rounded-xl shadow-lg"
-        />
-      );
-    } else if (file.type === 'application/pdf') {
-      return (
-        <div className="w-96 h-96 bg-gradient-to-br from-red-50 to-red-100 rounded-xl flex items-center justify-center shadow-lg">
-          <div className="text-center">
-            <FileText className="w-24 h-24 text-red-400 mx-auto mb-4" />
-            <span className="text-red-600 font-medium text-lg">Arquivo PDF</span>
-            <p className="text-red-500 text-sm mt-2">Clique para baixar e visualizar</p>
-          </div>
-        </div>
-      );
-    }
     return (
-      <div className="w-96 h-96 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl flex items-center justify-center shadow-lg">
-        <div className="text-center">
-          <File className="w-24 h-24 text-slate-400 mx-auto mb-4" />
-          <span className="text-slate-600 font-medium text-lg">Arquivo</span>
+        <div className="relative" onClick={handleCardClick}>
+            {isSelectionMode && (
+                <div className="absolute top-2 right-2 z-10 w-6 h-6 bg-white rounded-full border-2 flex items-center justify-center pointer-events-none">
+                    {isSelected && <Check className="w-4 h-4 text-emerald-500" />}
+                </div>
+            )}
+            <div className={`bg-white rounded-2xl shadow-lg border-2 p-4 transition-all duration-300 ${isSelectionMode ? 'cursor-pointer' : 'cursor-pointer hover:shadow-xl hover:-translate-y-1'} ${isSelected ? 'border-emerald-500' : 'border-slate-100'}`}>
+                {renderPreview()}
+                <div className="mt-4 flex items-center">
+                    <FileTypeIcon fileType={file.type} />
+                    <span className="ml-3 text-sm font-semibold text-slate-700 truncate">{file.name}</span>
+                </div>
+            </div>
         </div>
-      </div>
     );
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-4xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-slate-200">
-          <div className="flex items-center space-x-3">
-            <FileTypeIcon fileType={file.type} />
-            <div>
-              <h3 className="text-xl font-bold text-slate-800">{file.name}</h3>
-              <p className="text-sm text-slate-600">Validação de peça criativa</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-full transition-colors"
-          >
-            <X className="w-6 h-6 text-slate-600" />
-          </button>
-        </div>
-        <div className="p-6">
-          <div className="flex justify-center mb-8">
-            {renderContent()}
-          </div>
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-3">
-                Status da Validação
-              </label>
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  onClick={() => handleStatusChange(VALIDATION_STATUSES.APPROVED)}
-                  className={`p-4 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center justify-center space-x-2 ${
-                    localValidation.status === VALIDATION_STATUSES.APPROVED
-                      ? 'bg-emerald-500 text-white shadow-lg scale-105'
-                      : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
-                  }`}
-                >
-                  <Check className="w-5 h-5" />
-                  <span>Aprovar</span>
-                </button>
-                
-                <button
-                  onClick={() => handleStatusChange(VALIDATION_STATUSES.NEEDS_ADJUSTMENT)}
-                  className={`p-4 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center justify-center space-x-2 ${
-                    localValidation.status === VALIDATION_STATUSES.NEEDS_ADJUSTMENT
-                      ? 'bg-[#ffc801] text-white shadow-lg scale-105'
-                      : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
-                  }`}
-                >
-                  <Edit3 className="w-5 h-5" />
-                  <span>Precisa Ajustes</span>
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-3">
-                Comentário (opcional)
-              </label>
-              <textarea
-                value={localValidation.comment}
-                onChange={(e) => handleCommentChange(e.target.value)}
-                placeholder="Digite suas observações sobre a peça..."
-                className="w-full p-4 border border-slate-200 rounded-xl text-sm resize-none focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none transition-all"
-                rows="4"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-3">
-                Status Atual
-              </label>
-              <span className={`inline-block px-4 py-2 text-sm font-semibold rounded-full border ${STATUS_COLORS[localValidation.status]}`}>
-                {STATUS_LABELS[localValidation.status]}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center justify-end space-x-4 p-6 border-t border-slate-200 bg-slate-50 rounded-b-3xl">
-          <button
-            onClick={onClose}
-            className="px-6 py-3 text-slate-600 font-semibold hover:text-slate-800 transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-8 py-3 bg-gradient-to-r from-[#ffc801] to-[#ffb700] text-white font-semibold rounded-xl hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center space-x-2"
-          >
-            <Save className="w-5 h-5" />
-            <span>Salvar Validação</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 };
-
-// Componente para visualizar um arquivo (apenas preview)
-const FileViewer = ({ file, validation, onOpenPopup }) => {
-  const [isHovered, setIsHovered] = useState(false);
-
-  const renderPreview = () => {
-    if (file.type.startsWith('image/')) {
-      return (
-        <div className="relative group">
-          <img
-            src={file.url}
-            alt={file.name}
-            className="w-full h-48 object-cover rounded-xl"
-          />
-          {isHovered && (
-            <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center transition-all duration-200">
-              <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full flex items-center space-x-2">
-                <Eye className="w-4 h-4 text-slate-700" />
-                <span className="text-sm font-semibold text-slate-700">Visualizar</span>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    } else if (file.type.startsWith('video/')) {
-      return (
-        <div className="relative group">
-          <video
-            src={file.url}
-            className="w-full h-48 object-cover rounded-xl"
-          />
-          {isHovered && (
-            <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center transition-all duration-200">
-              <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full flex items-center space-x-2">
-                <Eye className="w-4 h-4 text-slate-700" />
-                <span className="text-sm font-semibold text-slate-700">Visualizar</span>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    } else if (file.type === 'application/pdf') {
-      return (
-        <div className="relative group">
-          <div className="w-full h-48 bg-gradient-to-br from-red-50 to-red-100 rounded-xl flex items-center justify-center">
-            <div className="text-center">
-              <FileText className="w-16 h-16 text-red-400 mx-auto mb-2" />
-              <span className="text-red-600 font-medium">PDF</span>
-            </div>
-          </div>
-          {isHovered && (
-            <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center transition-all duration-200">
-              <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full flex items-center space-x-2">
-                <Eye className="w-4 h-4 text-slate-700" />
-                <span className="text-sm font-semibold text-slate-700">Visualizar</span>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-    return (
-      <div className="relative group">
-        <div className="w-full h-48 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl flex items-center justify-center">
-          <div className="text-center">
-            <File className="w-16 h-16 text-slate-400 mx-auto mb-2" />
-            <span className="text-slate-600 font-medium">Arquivo</span>
-          </div>
-        </div>
-        {isHovered && (
-          <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center transition-all duration-200">
-            <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full flex items-center space-x-2">
-              <Eye className="w-4 h-4 text-slate-700" />
-              <span className="text-sm font-semibold text-slate-700">Visualizar</span>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div 
-      className="bg-white rounded-2xl shadow-xl border border-slate-100 p-6 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 cursor-pointer"
-      onClick={() => onOpenPopup(file)}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      {renderPreview()}
-      <div className="mt-4 flex items-center">
-        <FileTypeIcon fileType={file.type} />
-        <span className="ml-3 text-sm font-semibold text-slate-700 truncate">
-          {file.name}
-        </span>
-      </div>
-      <div className="mt-4">
-        <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full border ${STATUS_COLORS[validation.status]}`}>
-          {STATUS_LABELS[validation.status]}
-        </span>
-      </div>
-      {validation.comment && (
-        <div className="mt-3">
-          <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200 line-clamp-2">
-            {validation.comment}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Componente de filtros de validação
-const ValidationFilters = ({ validations, activeFilter, onFilterChange }) => {
-  const stats = Object.values(validations).reduce((acc, validation) => {
-    acc[validation.status] = (acc[validation.status] || 0) + 1;
-    return acc;
-  }, {});
-
-  const total = Object.values(validations).length;
-
-  if (total === 0) return null;
-
-  const filters = [
-    { id: 'all', title: 'Todas', value: total, color: 'slate', icon: '📋' },
-    { id: VALIDATION_STATUSES.PENDING, title: 'Pendentes', value: stats[VALIDATION_STATUSES.PENDING] || 0, color: 'slate', icon: '⏳' },
-    { id: VALIDATION_STATUSES.APPROVED, title: 'Aprovados', value: stats[VALIDATION_STATUSES.APPROVED] || 0, color: 'emerald', icon: '✅' },
-    { id: VALIDATION_STATUSES.NEEDS_ADJUSTMENT, title: 'Precisam Ajustes', value: stats[VALIDATION_STATUSES.NEEDS_ADJUSTMENT] || 0, color: 'amber', icon: '✏️' }
-  ];
-
-  return (
-    <div className="mb-8">
-      <div className="flex flex-wrap gap-3 mb-6">
-        {filters.map((filter) => (
-          <button
-            key={filter.id}
-            onClick={() => onFilterChange(filter.id === 'all' ? null : filter.id)}
-            className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 border ${
-              activeFilter === (filter.id === 'all' ? null : filter.id)
-                ? filter.color === 'slate' ? 'bg-slate-600 text-white border-slate-600 shadow-md'
-                : filter.color === 'emerald' ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
-                : 'bg-amber-600 text-white border-amber-600 shadow-md'
-                : filter.color === 'slate' ? 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                : filter.color === 'emerald' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-            }`}
-          >
-            <span className="mr-2 text-base">{filter.icon}</span>
-            <span>{filter.title}</span>
-            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${
-              activeFilter === (filter.id === 'all' ? null : filter.id)
-                ? 'bg-white/20 text-white'
-                : filter.color === 'slate' ? 'bg-slate-200 text-slate-700'
-                : filter.color === 'emerald' ? 'bg-emerald-200 text-emerald-700'
-                : 'bg-amber-200 text-amber-700'
-            }`}>
-              {filter.value}
-            </span>
-          </button>
-        ))}
-      </div>
-      {activeFilter && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center text-blue-700">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-              <span className="text-sm font-medium">
-                Mostrando apenas peças: {STATUS_LABELS[activeFilter]}
-              </span>
-            </div>
-            <button
-              onClick={() => onFilterChange(null)}
-              className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center"
-            >
-              <X className="w-4 h-4 mr-1" />
-              Limpar filtro
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Componente da Logo Aprobi
-const AprobiLogo = ({ size = "large" }) => {
-  const sizeClass = size === "large" ? "w-32" : "w-24";
-  return (
-    <img src={aprobiLogo} alt="Aprobi Logo" className={`${sizeClass} h-auto`} />
-  );
-};
-
-// ====================================================================
-// =================== NOVO COMPONENTE: MODAL DE CAMPANHA =============
-// ====================================================================
 
 const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
-  const [name, setName] = useState('');
-  const [client, setClient] = useState('');
-  const [creativeLine, setCreativeLine] = useState('');
-  const [error, setError] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
+    const [name, setName] = useState('');
+    const [selectedClient, setSelectedClient] = useState(null);
+    const [error, setError] = useState('');
+    const [isCreating, setIsCreating] = useState(false);
 
-  if (!isOpen) return null;
+    if (!isOpen) return null;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!name || !client) {
-      setError('O nome da campanha e o cliente são obrigatórios.');
-      return;
-    }
-    setError('');
-    setIsCreating(true);
-
-    try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ name, client, creativeLine }),
-      });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Falha ao criar campanha.');
-      }
-
-      const newCampaign = await response.json();
-      onCampaignCreated(newCampaign);
-      onClose();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsCreating(false);
-    }
-  };
-  
-  // Limpar campos ao fechar
-  const handleClose = () => {
-      setName('');
-      setClient('');
-      setCreativeLine('');
-      setError('');
-      onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="p-6 border-b border-slate-200 flex justify-between items-center">
-          <h3 className="text-xl font-bold text-slate-800">Criar Nova Campanha</h3>
-           <button onClick={handleClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-            <X className="w-5 h-5 text-slate-600" />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div className="p-6 space-y-4">
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-            <div>
-              <label htmlFor="campaignName" className="block text-sm font-semibold text-slate-700 mb-1">Nome da Campanha *</label>
-              <input type="text" id="campaignName" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border border-slate-300 rounded-md focus:border-[#ffc801] focus:ring-1 focus:ring-[#ffc801]" required />
-            </div>
-            <div>
-              <label htmlFor="clientName" className="block text-sm font-semibold text-slate-700 mb-1">Cliente *</label>
-              <input type="text" id="clientName" value={client} onChange={(e) => setClient(e.target.value)} className="w-full p-2 border border-slate-300 rounded-md focus:border-[#ffc801] focus:ring-1 focus:ring-[#ffc801]" required />
-            </div>
-            <div>
-              <label htmlFor="creativeLine" className="block text-sm font-semibold text-slate-700 mb-1">Linha Criativa (Opcional)</label>
-              <input type="text" id="creativeLine" value={creativeLine} onChange={(e) => setCreativeLine(e.target.value)} className="w-full p-2 border border-slate-300 rounded-md focus:border-[#ffc801] focus:ring-1 focus:ring-[#ffc801]" />
-            </div>
-          </div>
-          <div className="flex items-center justify-end space-x-4 p-6 bg-slate-50 rounded-b-2xl">
-            <button type="button" onClick={handleClose} className="px-4 py-2 text-slate-600 font-semibold hover:text-slate-800">Cancelar</button>
-            <button type="submit" disabled={isCreating} className="px-6 py-2 bg-gradient-to-r from-[#ffc801] to-[#ffb700] text-white font-semibold rounded-lg hover:shadow-lg disabled:opacity-50 disabled:grayscale">
-              {isCreating ? 'Criando...' : 'Criar Campanha'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-
-// Componente principal da aplicação
-const App = () => {
-  // --- MUDANÇA: ESTADOS NOVOS E ANTIGOS AGRUPADOS ---
-  const [campaigns, setCampaigns] = useState([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState('');
-  const [isCampaignModalOpen, setCampaignModalOpen] = useState(false);
-  const [files, setFiles] = useState([]);
-  const [validations, setValidations] = useState({});
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [activeFilter, setActiveFilter] = useState(null);
-
-  // MUDANÇA: EFEITO PARA BUSCAR AS CAMPANHAS
-  useEffect(() => {
-    const fetchCampaigns = async () => {
-      try {
-        const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns`, { credentials: 'include' });
-        if (response.ok) {
-          const data = await response.json();
-          setCampaigns(data);
-        } else {
-          console.error("Falha ao buscar campanhas.");
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!name || !selectedClient) {
+            setError('O nome da campanha e o cliente são obrigatórios.');
+            return;
         }
-      } catch (error) {
-        console.error("Erro de rede ao buscar campanhas:", error);
-      }
+        setError('');
+        setIsCreating(true);
+
+        try {
+            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ name, client: selectedClient.name }),
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Falha ao criar campanha.');
+            }
+
+            const newCampaign = await response.json();
+            onCampaignCreated(newCampaign);
+            handleClose();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setIsCreating(false);
+        }
     };
-    fetchCampaigns();
-  }, []);
-  
-  // MUDANÇA: O upload agora depende da campanha selecionada e envia os arquivos para o backend
-  const handleFilesAdded = useCallback(async (newFiles) => {
-    if (!selectedCampaignId) {
-      alert("Por favor, selecione uma campanha antes de fazer o upload.");
-      return;
-    }
-    
-    // Simula o upload local para feedback visual imediato (Opcional, mas melhora a UX)
-    const processedFiles = newFiles.map(file => ({
-      id: Date.now() + Math.random(),
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      url: URL.createObjectURL(file),
-      file: file
-    }));
-    setFiles(prev => [...prev, ...processedFiles]);
-    const newValidations = {};
-    processedFiles.forEach(file => {
-      newValidations[file.id] = { status: VALIDATION_STATUSES.PENDING, comment: '' };
-    });
-    setValidations(prev => ({ ...prev, ...newValidations }));
 
-    // Envio para o backend em segundo plano
-    const formData = new FormData();
-    newFiles.forEach(file => {
-      formData.append('files', file);
-    });
+    const handleClose = () => {
+        setName('');
+        setSelectedClient(null);
+        setError('');
+        onClose();
+    };
 
-    try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/upload`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      });
-
-      if (!response.ok) throw new Error('Falha no upload para o servidor.');
-      
-      console.log("Arquivos enviados com sucesso para o backend.");
-      // Futuramente, podemos recarregar as peças da campanha aqui
-    } catch (error) {
-      console.error('Erro no upload para o backend:', error);
-      alert('Ocorreu um erro ao enviar os arquivos para o servidor.');
-      // Opcional: remover os arquivos da UI se o upload falhar
-    }
-  }, [selectedCampaignId]);
-
-
-  // Carrega dados salvos do localStorage ao iniciar
-  useEffect(() => {
-    // ... (código existente)
-  }, []);
-
-  // Fecha o menu de exportação
-  useEffect(() => {
-    // ... (código existente)
-  }, [showExportMenu]);
-
-  // Salva no localStorage sempre que files ou validations mudarem
-  useEffect(() => {
-    // ... (código existente)
-  }, [files]);
-
-  useEffect(() => {
-    // ... (código existente)
-  }, [validations]);
-
-  const handleOpenPopup = useCallback((file) => { setSelectedFile(file); }, []);
-  const handleClosePopup = useCallback(() => { setSelectedFile(null); }, []);
-  const handleSaveValidation = useCallback((fileId, validation) => {
-    setValidations(prev => ({ ...prev, [fileId]: validation }));
-  }, []);
-  const handleFilterChange = useCallback((filter) => { setActiveFilter(filter); }, []);
-  const filteredFiles = files.filter(file => {
-    if (!activeFilter) return true;
-    const validation = validations[file.id];
-    return validation && validation.status === activeFilter;
-  });
-
-  const exportCSV = () => { /* ... (código existente) */ };
-  const exportPDF = async () => { /* ... (código existente) */ };
-  const clearAll = () => { /* ... (código existente) */ };
-
-  // MUDANÇA: Nova função para lidar com a campanha criada pelo modal
-  const handleCampaignCreated = (newCampaign) => {
-    setCampaigns(prev => [newCampaign, ...prev]);
-    setSelectedCampaignId(newCampaign.id);
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-<header className="bg-white shadow-xl border-b border-slate-200">
-  <div className="max-w-7xl mx-auto px-6 py-8">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center space-x-6">
-        <AprobiLogo size="large" />
-        <div className="border-l border-slate-300 pl-6">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
-            Sistema de Aprovação
-          </h1>
-          <p className="text-lg text-slate-600 font-medium">
-            Validação de Peças Criativas
-          </p>
-        </div>
-      </div>
-
-      {files.length > 0 && (
-        <div className="flex gap-4">
-          <div className="relative export-menu-container">
-            <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              disabled={isExporting}
-              className={`bg-gradient-to-r from-emerald-500 to-emerald-600 text-white px-6 py-3 rounded-xl hover:shadow-lg transition-all duration-200 flex items-center font-semibold transform hover:scale-105 ${isExporting ? 'opacity-75 cursor-not-allowed' : ''}`}
-            >
-              {isExporting ? (
-                <>
-                  <div className="w-5 h-5 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Exportando...
-                </>
-              ) : (
-                <>
-                  <Download className="w-5 h-5 mr-2" />
-                  Exportar
-                  <ChevronDown className="w-4 h-4 ml-2" />
-                </>
-              )}
-            </button>
-
-            {showExportMenu && !isExporting && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50">
-                <div className="py-2">
-                  <button onClick={() => { exportCSV(); setShowExportMenu(false); }} className="w-full text-left px-4 py-3 text-slate-700 hover:bg-slate-50 flex items-center transition-colors">
-                    <FileText className="w-4 h-4 mr-3 text-emerald-600" />
-                    <div>
-                      <div className="font-semibold">Exportar CSV</div>
-                      <div className="text-xs text-slate-500">Planilha para análise</div>
-                    </div>
-                  </button>
-                  <button onClick={() => { exportPDF(); setShowExportMenu(false); }} className="w-full text-left px-4 py-3 text-slate-700 hover:bg-slate-50 flex items-center transition-colors">
-                    <File className="w-4 h-4 mr-3 text-red-600" />
-                    <div>
-                      <div className="font-semibold">Exportar PDF</div>
-                      <div className="text-xs text-slate-500">Relatório visual completo</div>
-                    </div>
-                  </button>
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+                    <h3 className="text-xl font-bold text-slate-800">Criar Nova Campanha</h3>
+                    <button onClick={handleClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                        <X className="w-5 h-5 text-slate-600" />
+                    </button>
                 </div>
-              </div>
-            )}
-          </div>
-
-          <button onClick={clearAll} className="bg-gradient-to-r from-rose-500 to-rose-600 text-white px-6 py-3 rounded-xl hover:shadow-lg transition-all duration-200 font-semibold transform hover:scale-105">
-            Limpar Tudo
-          </button>
-        </div>
-      )}
-    </div>
-  </div>
-</header>
-
-      <main className="max-w-7xl mx-auto px-6 py-12">
-        {/* ======================================================= */}
-        {/* ============ NOVA SEÇÃO DE CAMPANHAS MODERNA ========== */}
-        {/* ======================================================= */}
-        <div className="bg-white p-8 rounded-2xl shadow-lg mb-8 border border-slate-200">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-6">
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-gradient-to-r from-[#ffc801] to-[#ffb700] rounded-xl flex items-center justify-center mr-4 shadow-lg">
-                <Briefcase className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-slate-800">Gestão de Campanhas</h2>
-                <p className="text-slate-600">Selecione ou crie uma campanha para começar</p>
-              </div>
+                <form onSubmit={handleSubmit}>
+                    <div className="p-6 space-y-6">
+                        {error && <p className="text-red-500 text-sm">{error}</p>}
+                        <div>
+                            <label htmlFor="campaignName" className="block text-sm font-semibold text-slate-700 mb-2">Nome da Campanha *</label>
+                            <input 
+                                type="text" 
+                                id="campaignName" 
+                                value={name} 
+                                onChange={(e) => setName(e.target.value)} 
+                                className="w-full p-3 border border-slate-300 rounded-xl focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none" 
+                                required 
+                            />
+                        </div>
+                        <div>
+                            <Listbox value={selectedClient} onChange={setSelectedClient}>
+                                <Listbox.Label className="block text-sm font-semibold text-slate-700 mb-2">Cliente *</Listbox.Label>
+                                <div className="relative">
+                                    <Listbox.Button className="relative w-full cursor-default rounded-xl bg-white py-3 pl-4 pr-10 text-left border border-slate-300 focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none">
+                                        <span className="block truncate">{selectedClient ? selectedClient.name : "Selecione um cliente"}</span>
+                                        <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                                            <ChevronDown className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                                        </span>
+                                    </Listbox.Button>
+                                    <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
+                                        <Listbox.Options className="absolute mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black/5 focus:outline-none sm:text-sm z-10">
+                                            {clients.map((client) => (
+                                                <Listbox.Option
+                                                    key={client.name}
+                                                    className={({ active }) => `relative cursor-default select-none py-2 pl-10 pr-4 ${ active ? 'bg-amber-100 text-amber-900' : 'text-gray-900' }`}
+                                                    value={client}
+                                                >
+                                                    {({ selected }) => (
+                                                        <>
+                                                            <span className={`block truncate ${ selected ? 'font-medium' : 'font-normal' }`}>
+                                                                {client.name}
+                                                            </span>
+                                                            {selected ? (
+                                                                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-amber-600">
+                                                                    <Check className="h-5 w-5" aria-hidden="true" />
+                                                                </span>
+                                                            ) : null}
+                                                        </>
+                                                    )}
+                                                </Listbox.Option>
+                                            ))}
+                                        </Listbox.Options>
+                                    </Transition>
+                                </div>
+                            </Listbox>
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-end space-x-4 p-6 bg-slate-50 rounded-b-2xl">
+                        <button type="button" onClick={handleClose} className="px-4 py-2 text-slate-600 font-semibold hover:text-slate-800">Cancelar</button>
+                        <button type="submit" disabled={isCreating} className="px-6 py-2 bg-gradient-to-r from-[#ffc801] to-[#ffb700] text-white font-semibold rounded-lg hover:shadow-lg disabled:opacity-50 disabled:grayscale">
+                            {isCreating ? 'Criando...' : 'Criar Campanha'}
+                        </button>
+                    </div>
+                </form>
             </div>
-            <button
-              onClick={() => setCampaignModalOpen(true)}
-              className="flex items-center justify-center px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition-all transform hover:scale-105 shadow-lg hover:shadow-xl"
-            >
-              <PlusCircle className="w-5 h-5 mr-2" />
-              Nova Campanha
-            </button>
-          </div>
-          
-          <CampaignSelector
-            campaigns={campaigns}
-            selectedCampaignId={selectedCampaignId}
-            onCampaignChange={setSelectedCampaignId}
-            onCreateNew={() => setCampaignModalOpen(true)}
-            disabled={false}
-          />
         </div>
-
-        {/* Preview Card da Campanha Selecionada */}
-        {selectedCampaignId && (
-          <div className="mb-8">
-            <CampaignPreviewCard 
-              campaign={campaigns.find(c => c.id === selectedCampaignId)}
-              pieceCount={files.length}
-            />
-          </div>
-        )}
-
-        <FileUpload onFilesAdded={handleFilesAdded} disabled={!selectedCampaignId} />
-        
-        {files.length > 0 && (
-          <>
-            <ValidationFilters 
-              validations={validations} 
-              activeFilter={activeFilter}
-              onFilterChange={handleFilterChange}
-            />
-            
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-slate-800 mb-4">
-                {activeFilter 
-                  ? `Peças ${STATUS_LABELS[activeFilter]} (${filteredFiles.length})`
-                  : `Peças para Validação (${filteredFiles.length})`
-                }
-              </h2>
-              <p className="text-slate-600 mb-6">
-                Clique em qualquer peça para abrir a visualização completa e realizar a validação.
-              </p>
-            </div>
-            
-            {filteredFiles.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                {filteredFiles.map(file => (
-                  <FileViewer
-                    key={file.id}
-                    file={file}
-                    validation={validations[file.id] || { status: VALIDATION_STATUSES.PENDING, comment: '' }}
-                    onOpenPopup={handleOpenPopup}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <FileText className="w-10 h-10 text-slate-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-600 mb-2">
-                  Nenhuma peça encontrada
-                </h3>
-                <p className="text-slate-500">
-                  Não há peças com o status "{STATUS_LABELS[activeFilter]}" no momento.
-                </p>
-              </div>
-            )}
-          </>
-        )}
-      </main>
-
-      {/* Pop-up Modal */}
-      {selectedFile && (
-        <FilePopup
-          file={selectedFile}
-          validation={validations[selectedFile.id] || { status: VALIDATION_STATUSES.PENDING, comment: '' }}
-          onValidationChange={handleSaveValidation}
-          onClose={handleClosePopup}
-          onSave={handleSaveValidation}
-        />
-      )}
-
-      {/* MUDANÇA: RENDERIZAÇÃO DO MODAL DE CAMPANHA */}
-      <NewCampaignModal 
-        isOpen={isCampaignModalOpen}
-        onClose={() => setCampaignModalOpen(false)}
-        onCampaignCreated={handleCampaignCreated}
-      />
-    </div>
-  );
+    );
 };
 
-// No final, troquei o nome do componente principal para HomePage para ficar mais claro
-export default App; // Mantive 'App' aqui se for o seu padrão, mas recomendo renomear para HomePage se este for o único conteúdo do arquivo.
+const FilePopup = ({ file, onClose }) => {
+    if (!file) return null;
+
+    const renderContent = () => {
+        if (file.type.startsWith('image/')) {
+            return <img src={file.url} alt={file.name} className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg" />;
+        }
+        if (file.type.startsWith('video/')) {
+            return <video src={file.url} controls autoPlay className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg" />;
+        }
+        return (
+            <div className="w-96 h-96 bg-slate-100 rounded-xl flex flex-col items-center justify-center text-center p-4">
+                <File className="w-24 h-24 text-slate-400 mb-4" />
+                <span className="text-slate-700 font-semibold">{file.name}</span>
+                <p className="text-slate-500 text-sm mt-2">Pré-visualização não disponível para este tipo de arquivo.</p>
+            </div>
+        );
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-4 border-b border-slate-200">
+                    <h3 className="text-lg font-bold text-slate-800 truncate">{file.name}</h3>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-600" /></button>
+                </div>
+                <div className="p-6 flex-grow flex items-center justify-center">{renderContent()}</div>
+            </div>
+        </div>
+    );
+};
+
+const FileUpload = ({ onFilesAdded, onDriveClick, disabled, children }) => {
+    const [isDragging, setIsDragging] = useState(false);
+    const handleDrop = useCallback((e) => { e.preventDefault(); if (disabled) return; setIsDragging(false); onFilesAdded(Array.from(e.dataTransfer.files)); }, [onFilesAdded, disabled]);
+    const handleDragOver = useCallback((e) => { e.preventDefault(); if (disabled) return; setIsDragging(true); }, [disabled]);
+    const handleDragLeave = useCallback(() => setIsDragging(false), []);
+    const handleFileInput = useCallback((e) => { if (disabled) return; onFilesAdded(Array.from(e.target.files)); }, [onFilesAdded, disabled]);
+
+    return (
+        <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-300 ${isDragging && !disabled ? 'border-[#ffc801] bg-[#ffc801]/5 scale-105' : 'border-slate-300'} ${disabled ? 'opacity-50' : ''}`} onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
+            <div className={disabled ? 'pointer-events-none' : ''}>{children}</div>
+            <div className="mt-6 flex flex-col sm:flex-row justify-center items-center gap-4">
+                <label htmlFor="file-input" className={`inline-flex items-center px-6 py-3 bg-gradient-to-r from-[#ffc801] to-[#ffb700] text-white font-semibold rounded-xl transition-all duration-200 ${disabled ? 'cursor-not-allowed grayscale' : 'cursor-pointer hover:shadow-lg transform hover:scale-105'}`}>
+                    <Upload className="w-5 h-5 mr-2" />
+                    Selecionar Arquivos
+                </label>
+                <button onClick={onDriveClick} disabled={disabled} className={`inline-flex items-center px-6 py-3 bg-white border border-slate-300 text-slate-700 font-semibold rounded-xl transition-all duration-200 ${disabled ? 'cursor-not-allowed grayscale' : 'hover:shadow-lg transform hover:scale-105 hover:bg-slate-50'}`}>
+                    <Cloud className="w-5 h-5 mr-2 text-blue-500" />
+                    Importar do Google Drive
+                </button>
+            </div>
+            <input type="file" multiple onChange={handleFileInput} className="hidden" id="file-input" disabled={disabled} />
+        </div>
+    );
+};
+
+// --- COMPONENTE PRINCIPAL ---
+const HomePage = () => {
+    // Persistência localStorage
+    const [campaigns, setCampaigns] = useState(() => {
+        const saved = localStorage.getItem('aprobi-campaigns');
+        return saved ? JSON.parse(saved) : [];
+    });
+    const [creativeLines, setCreativeLines] = useState(() => {
+        const saved = localStorage.getItem('aprobi-creativeLines');
+        return saved ? JSON.parse(saved) : [];
+    });
+
+    const [selectedCampaignId, setSelectedCampaignId] = useState('');
+    const [isCampaignModalOpen, setCampaignModalOpen] = useState(false);
+    const [selectedCreativeLineId, setSelectedCreativeLineId] = useState(null);
+    const [newCreativeLineName, setNewCreativeLineName] = useState("");
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedPieces, setSelectedPieces] = useState(new Set());
+
+    // Google Drive Picker
+    const [googleAccessToken, setGoogleAccessToken] = useState(null);
+
+    useEffect(() => {
+        localStorage.setItem('aprobi-campaigns', JSON.stringify(campaigns));
+    }, [campaigns]);
+
+    useEffect(() => {
+        localStorage.setItem('aprobi-creativeLines', JSON.stringify(creativeLines));
+    }, [creativeLines]);
+
+    useEffect(() => {
+        if (selectedCampaignId) {
+            setSelectedCreativeLineId(null);
+        }
+    }, [selectedCampaignId]);
+
+    // Busca token do backend
+    useEffect(() => {
+        const fetchToken = async () => {
+            try {
+                const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/me/token`, { credentials: 'include' });
+                if (response.ok) {
+                    const data = await response.json();
+                    setGoogleAccessToken(data.accessToken);
+                }
+            } catch (error) {
+                console.error("Erro ao buscar token do Google:", error);
+            }
+        };
+        fetchToken();
+    }, []);
+
+    const handleCreateCreativeLine = (e) => {
+        e.preventDefault();
+        if (!newCreativeLineName.trim() || !selectedCampaignId) return;
+        const newLine = { id: Date.now(), campaignId: selectedCampaignId, name: newCreativeLineName, pieces: [] };
+        setCreativeLines(prev => [...prev, newLine]);
+        setNewCreativeLineName("");
+    };
+
+    const handleFilesAdded = useCallback((newFiles) => {
+        if (!selectedCreativeLineId) {
+            alert("Por favor, selecione ou crie uma 'Linha Criativa / Pasta' antes de adicionar peças.");
+            return;
+        }
+        const processedFiles = newFiles.map(file => ({
+            id: Date.now() + Math.random(), name: file.name, type: file.type, url: URL.createObjectURL(file),
+        }));
+        setCreativeLines(prevLines =>
+            prevLines.map(line =>
+                line.id === selectedCreativeLineId
+                    ? { ...line, pieces: [...line.pieces, ...processedFiles] }
+                    : line
+            )
+        );
+    }, [selectedCreativeLineId]);
+
+    const handleTogglePieceSelection = (pieceId) => {
+        setSelectedPieces(prevSelected => {
+            const newSelected = new Set(prevSelected);
+            if (newSelected.has(pieceId)) {
+                newSelected.delete(pieceId);
+            } else {
+                newSelected.add(pieceId);
+            }
+            return newSelected;
+        });
+    };
+
+    const handleRemoveSelectedPieces = () => {
+        setCreativeLines(prevLines =>
+            prevLines.map(line => {
+                if (line.id === selectedCreativeLineId) {
+                    return {
+                        ...line,
+                        pieces: line.pieces.filter(piece => !selectedPieces.has(piece.id))
+                    };
+                }
+                return line;
+            })
+        );
+        setIsSelectionMode(false);
+        setSelectedPieces(new Set());
+    };
+
+    const handleCancelSelection = () => {
+        setIsSelectionMode(false);
+        setSelectedPieces(new Set());
+    };
+
+    const handleCampaignCreated = (newCampaign) => {
+        setCampaigns(prev => [newCampaign, ...prev]);
+        setSelectedCampaignId(newCampaign.id);
+    };
+
+    // --- Google Drive Picker ---
+    const handleGoogleDriveClick = () => {
+        if (!googleAccessToken) {
+            alert("Não foi possível obter a permissão para acessar o Google Drive. Tente recarregar a página.");
+            return;
+        }
+
+        const DEVELOPER_KEY = 'AIzaSyC_5PqvhXD8sS-woM_HMFcfY08cSJPvs-w'; // <-- COLE SUA CHAVE DE API AQUI
+        const APP_ID = '901573618274'; // <-- COLE APENAS OS NÚMEROS DO SEU GOOGLE_CLIENT_ID AQUI
+
+        const showPicker = () => {
+            const picker = new window.google.picker.PickerBuilder()
+                .addView(window.google.picker.ViewId.DOCS)
+                .setOAuthToken(googleAccessToken)
+                .setDeveloperKey(DEVELOPER_KEY)
+                .setAppId(APP_ID)
+                .setCallback(pickerCallback)
+                .build();
+            picker.setVisible(true);
+        };
+
+        if (window.google && window.google.picker) {
+            showPicker();
+        } else {
+            const script = document.createElement('script');
+            script.src = 'https://apis.google.com/js/api.js';
+            script.onload = () => {
+                window.gapi.load('picker', showPicker);
+            };
+            document.head.appendChild(script);
+        }
+    };
+
+    const pickerCallback = (data) => {
+        if (data.action === window.google.picker.Action.PICKED) {
+            const files = data.docs.map(doc => ({
+                id: doc.id,
+                name: doc.name,
+                type: doc.mimeType,
+                url: doc.embedUrl || doc.url,
+            }));
+            console.log("Arquivos selecionados do Google Drive:", files);
+            alert(`${files.length} arquivo(s) selecionado(s) do Google Drive!`);
+            // Aqui você pode adicionar lógica para importar os arquivos para a pasta selecionada
+        }
+    };
+
+    const selectedCampaign = campaigns.find(c => c.id === selectedCampaignId);
+    const currentCreativeLines = creativeLines.filter(line => line.campaignId === selectedCampaignId);
+    const piecesOfSelectedLine = currentCreativeLines.find(line => line.id === selectedCreativeLineId)?.pieces || [];
+    const totalPieces = currentCreativeLines.reduce((acc, line) => acc + line.pieces.length, 0);
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+            <header className="bg-white shadow-md border-b border-slate-200">
+                <div className="max-w-7xl mx-auto px-6 py-8 flex items-center space-x-6">
+                    <img src={aprobiLogo} alt="Aprobi Logo" className="w-32 h-auto" />
+                    <div className="border-l border-slate-300 pl-6">
+                        <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">Sistema de Aprovação</h1>
+                        <p className="text-lg text-slate-600 font-medium">Validação de Peças Criativas</p>
+                    </div>
+                </div>
+            </header>
+
+            <main className="max-w-7xl mx-auto px-6 py-12">
+                <div className="bg-white p-8 rounded-2xl shadow-lg mb-8 border border-slate-200">
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-2xl font-bold text-slate-800">Gestão de Campanhas</h2>
+                        <button onClick={() => setCampaignModalOpen(true)} className="flex items-center px-6 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-all">
+                            <PlusCircle className="w-5 h-5 mr-2" />
+                            Nova Campanha
+                        </button>
+                    </div>
+                    <CampaignSelector campaigns={campaigns} selectedCampaignId={selectedCampaignId} onCampaignChange={setSelectedCampaignId} onCreateNew={() => setCampaignModalOpen(true)} />
+                </div>
+
+                {selectedCampaignId && (
+                    <>
+                        <CampaignPreviewCard campaign={selectedCampaign} pieceCount={totalPieces} />
+                        
+                        <div className="mt-8 bg-white p-8 rounded-2xl shadow-lg border border-slate-200">
+                            <h3 className="text-xl font-bold text-slate-800 mb-4">Linha Criativa / Pasta</h3>
+                            <form onSubmit={handleCreateCreativeLine} className="flex gap-4 mb-6">
+                                <input type="text" value={newCreativeLineName} onChange={(e) => setNewCreativeLineName(e.target.value)} placeholder="Nome da nova pasta..." className="flex-grow p-3 border border-slate-300 rounded-xl focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none" />
+                                <button type="submit" className="flex-shrink-0 px-6 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-all">
+                                    <FolderPlus className="w-5 h-5 mr-2 inline-block" />
+                                    Criar Pasta
+                                </button>
+                            </form>
+                            <div className="space-y-2">
+                                {currentCreativeLines.map(line => (
+                                    <div key={line.id} onClick={() => setSelectedCreativeLineId(line.id === selectedCreativeLineId ? null : line.id)} className={`p-4 rounded-lg cursor-pointer border-2 transition-all flex justify-between items-center ${selectedCreativeLineId === line.id ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-transparent hover:bg-slate-100'}`}>
+                                        <span className="font-semibold text-slate-700">{line.name}</span>
+                                        <span className="text-sm text-slate-500 font-medium bg-slate-200 px-2 py-1 rounded-md">{line.pieces.length} peças</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="mt-8">
+                            <FileUpload onFilesAdded={handleFilesAdded} onDriveClick={handleGoogleDriveClick} disabled={!selectedCreativeLineId}>
+                                <div className="flex flex-col items-center">
+                                    <div className={`mx-auto w-16 h-16 bg-gradient-to-br from-[#ffc801] to-[#ffb700] rounded-full flex items-center justify-center mb-4 shadow-lg ${!selectedCreativeLineId ? 'grayscale' : ''}`}>
+                                        <Upload className="h-8 w-8 text-white" />
+                                    </div>
+                                    <h3 className="text-lg font-bold text-slate-800 mb-2">
+                                        {!selectedCreativeLineId ? "Selecione uma pasta para adicionar peças" : `Adicionar peças em "${currentCreativeLines.find(l => l.id === selectedCreativeLineId)?.name}"`}
+                                    </h3>
+                                    <p className="text-slate-500 text-sm">Arraste e solte os arquivos ou use os botões abaixo</p>
+                                </div>
+                            </FileUpload>
+                        </div>
+                        
+                        {piecesOfSelectedLine.length > 0 && (
+                            <div className="mt-8">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-2xl font-bold text-slate-800">Peças em "{currentCreativeLines.find(l => l.id === selectedCreativeLineId)?.name}"</h3>
+                                    {!isSelectionMode ? (
+                                        <button onClick={() => setIsSelectionMode(true)} className="flex items-center px-4 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded-lg hover:bg-slate-50 transition-colors">
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Remover Peças
+                                        </button>
+                                    ) : (
+                                        <div className="flex items-center gap-4">
+                                            <button onClick={handleCancelSelection} className="flex items-center px-4 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded-lg hover:bg-slate-50 transition-colors">
+                                                <XCircle className="w-4 h-4 mr-2" />
+                                                Cancelar
+                                            </button>
+                                            <button onClick={handleRemoveSelectedPieces} disabled={selectedPieces.size === 0} className="flex items-center px-4 py-2 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                                <Trash2 className="w-4 h-4 mr-2" />
+                                                Remover ({selectedPieces.size})
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {piecesOfSelectedLine.map(piece => (
+                                        <FileViewer 
+                                            key={piece.id} 
+                                            file={piece} 
+                                            onOpenPopup={setSelectedFile} 
+                                            isSelectionMode={isSelectionMode}
+                                            isSelected={selectedPieces.has(piece.id)}
+                                            onSelect={handleTogglePieceSelection}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+            </main>
+
+            <NewCampaignModal isOpen={isCampaignModalOpen} onClose={() => setCampaignModalOpen(false)} onCampaignCreated={handleCampaignCreated} />
+            <FilePopup file={selectedFile} onClose={() => setSelectedFile(null)} />
+        </div>
+    );
+};
+
+export default HomePage;

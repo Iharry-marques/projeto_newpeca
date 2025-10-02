@@ -1,88 +1,40 @@
-// frontend/src/pages/Login.jsx
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import aprobiLogo from "../assets/aprobi-logo.jpg"; // <- caminho certo (pages -> assets)
+// Em: frontend/src/pages/Login.jsx (VERSÃO CORRIGIDA)
 
-const BACKEND =
-  import.meta.env.VITE_BACKEND_URL || "http://localhost:3000";
+import React from 'react';
+import aprobiLogo from '../assets/aprobi-logo.jpg';
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
 export default function LoginPage() {
-  const navigate = useNavigate();
-  const [checking, setChecking] = useState(true);
-  const [redirecting, setRedirecting] = useState(false);
-
-  // Se já estiver autenticado, manda pra /suno
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${BACKEND}/me`, { credentials: "include" });
-        if (!res.ok) return setChecking(false);
-        const json = await res.json();
-        if (!cancelled) {
-          if (json?.user) {
-            navigate("/suno", { replace: true });
-          } else {
-            setChecking(false);
-          }
-        }
-      } catch {
-        if (!cancelled) setChecking(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [navigate]);
-
-  const handleGoogle = () => {
-    setRedirecting(true);
-    window.location.assign(`${BACKEND}/auth/google`);
+  const handleLogin = () => {
+    // Apenas redireciona para o fluxo de autenticação do Google no backend
+    window.location.href = `${BACKEND_URL}/auth/google`;
   };
 
-  if (checking) {
-    // tela bem simples enquanto checa sessão
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "sans-serif",
-          color: "#334155",
-        }}
-      >
-        Verificando sessão…
-      </div>
-    );
-  }
-
+  // Este componente agora apenas renderiza a UI de login, sem lógicas complexas.
   return (
     <div
       style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background:
-          "linear-gradient(135deg, rgba(248,250,252,1) 0%, rgba(241,245,249,1) 100%)",
-        fontFamily: "sans-serif",
-        color: "#0f172a",
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, rgba(248,250,252,1) 0%, rgba(241,245,249,1) 100%)',
+        fontFamily: 'sans-serif',
+        color: '#0f172a',
         padding: 24,
       }}
     >
       <div
         style={{
-          width: "100%",
+          width: '100%',
           maxWidth: 440,
-          background: "#fff",
-          border: "1px solid #e2e8f0",
+          background: '#fff',
+          border: '1px solid #e2e8f0',
           borderRadius: 16,
-          boxShadow:
-            "0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.05)",
+          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.05)',
           padding: 28,
-          textAlign: "center",
+          textAlign: 'center',
         }}
       >
         <img
@@ -90,38 +42,35 @@ export default function LoginPage() {
           alt="Aprobi"
           style={{
             width: 120,
-            height: "auto",
+            height: 'auto',
             borderRadius: 12,
-            display: "block",
-            margin: "0 auto 16px auto",
-            objectFit: "cover",
+            display: 'block',
+            margin: '0 auto 16px auto',
+            objectFit: 'cover',
           }}
         />
         <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>
           Aprobi • Login
         </h1>
-        <p style={{ marginTop: 8, color: "#475569" }}>
+        <p style={{ marginTop: 8, color: '#475569' }}>
           Entre com sua conta Google Suno.
         </p>
 
         <button
-          onClick={handleGoogle}
-          disabled={redirecting}
+          onClick={handleLogin}
           style={{
             marginTop: 16,
-            width: "100%",
+            width: '100%',
             height: 44,
             borderRadius: 10,
-            border: "1px solid #e2e8f0",
-            background: redirecting
-              ? "#f1f5f9"
-              : "linear-gradient(90deg, #ffc801, #ffb700)",
-            color: redirecting ? "#64748b" : "#18181b",
+            border: '1px solid #e2e8f0',
+            background: 'linear-gradient(90deg, #ffc801, #ffb700)',
+            color: '#18181b',
             fontWeight: 700,
-            cursor: redirecting ? "not-allowed" : "pointer",
+            cursor: 'pointer',
           }}
         >
-          {redirecting ? "Redirecionando…" : "Entrar com Google"}
+          Entrar com Google
         </button>
       </div>
     </div>

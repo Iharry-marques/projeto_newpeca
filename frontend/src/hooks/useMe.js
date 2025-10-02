@@ -1,4 +1,4 @@
-// frontend/src/hooks/useMe.js
+// Em: frontend/src/hooks/useMe.js (VERSÃO MELHORADA)
 import { useEffect, useState } from 'react';
 
 export function useMe() {
@@ -18,15 +18,15 @@ export function useMe() {
           { credentials: 'include' }
         );
 
-      // se 401, não autenticado
         if (!res.ok) {
           if (!cancelled) setData({ loading: false, authenticated: false, user: null, error: null });
           return;
         }
 
         const json = await res.json();
-        const isAuth = !!json?.user;   // 👈 chave da correção
-        if (!cancelled) setData({ loading: false, authenticated: isAuth, user: json.user, error: null });
+
+        // MUDANÇA AQUI: Lendo a chave 'authenticated' que o backend envia
+        if (!cancelled) setData({ loading: false, authenticated: json.authenticated, user: json.user, error: null });
       } catch (e) {
         if (!cancelled) setData({ loading: false, authenticated: false, user: null, error: String(e) });
       }
