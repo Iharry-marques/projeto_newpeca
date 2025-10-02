@@ -1,88 +1,81 @@
-// Em: backend/app.js
+// Em: frontend/src/pages/App.jsx
 
-require('dotenv').config();
+import React, { useState, useEffect } from 'react';
+// BrowserRouter foi removido da importação abaixo
+import { Routes, Route, Navigate } from 'react-router-dom';
 
-// --- Importações de Pacotes ---
-const express = require('express');
-const cors = require('cors'); // 1. Importe o pacote
-const session = require('express-session');
-const SQLiteStore = require('connect-sqlite3')(session);
-const bodyParser = require('body-parser');
+// Importe suas páginas e componentes
+import ProtectedRoute from '../guards/ProtectedRoute';
+import Login from './Login';
+import HomePage from './HomePage';
+import ClientLoginPage from './ClientLoginPage';
+import ClientDashboard from './ClientDashboard';
+import ClientApprovalPage from './ClientApprovalPage';
+import ClientManagementPage from './ClientManagementPage';
+import { useMe } from '../hooks/useMe';
+import Spinner from './Spinner';
 
-// --- Importações do Projeto (Corrigidas) ---
-const { googleAuthRouter, ensureAuth, meRouter, passport } = require('./auth'); // <-- MUDANÇA AQUI
-const campaignRoutes = require('./routes/campaigns');
-const { Campaign, Piece, sequelize } = require('./models');
-const errorHandler = require('./middleware/errorHandler');
+function App() {
+  const { authenticated, loading } = useMe();
+  const [googleAccessToken, setGoogleAccessToken] = useState(null);
 
-// --- Início da Aplicação Express ---
-const app = express();
-const isProduction = process.env.NODE_ENV === 'production';
+  useEffect(() => {
+    const fetchToken = async () => {
+      if (authenticated && !googleAccessToken) {
+        try {
+          const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/me/token`, { credentials: 'include' });
+          if (response.ok) {
+            const data = await response.json();
+            setGoogleAccessToken(data.accessToken);
+          } else {
+            console.error("Falha ao buscar token, resposta não OK:", response.status);
+          }
+        } catch (error) {
+          console.error("Erro na requisição para /me/token:", error);
+        }
+      }
+    };
+    if (!loading) {
+      fetchToken();
+    }
+  }, [authenticated, loading, googleAccessToken]);
 
-app.set('trust proxy', 1);
-
-// --- Configuração dos Middlewares ---
-
-// 1. CORS
-app.use(cors({
-  origin: process.env.FRONTEND_URL, // Permite apenas a origem do seu frontend
-  credentials: true // Permite que o navegador envie cookies
-}));
-
-// 2. Body Parser
-app.use(bodyParser.json());
-
-// 3. Sessões (Usando a versão mais robusta com SQLite)
-app.use(
-  session({
-    store: new SQLiteStore({
-      db: 'database.sqlite',
-      dir: './',
-    }),
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: isProduction, 
-      httpOnly: true,
-      sameSite: isProduction ? 'none' : 'lax',
-      proxy: isProduction,
-      maxAge: 24 * 60 * 60 * 1000, // 24 horas
-    },
-  })
-);
-
-// 4. Passport.js
-app.use(passport.initialize());
-app.use(passport.session());
-
-// --- Associações dos Modelos ---
-Campaign.hasMany(Piece);
-Piece.belongsTo(Campaign);
-
-// --- ROTAS DA APLICAÇÃO (Corrigidas) ---
-app.use(googleAuthRouter); // Rota de autenticação do Google
-app.use('/me', meRouter);   // Rota para verificar o usuário logado
-
-// Rotas protegidas pelo middleware `ensureAuth`
-app.use('/campaigns', ensureAuth, campaignRoutes);
-
-// Middleware para tratamento de erros
-app.use(errorHandler);
-
-/* ========== Inicialização do Servidor ========== */
-const PORT = process.env.PORT || 3000;
-
-async function start() {
-  try {
-    await sequelize.sync();
-    app.listen(PORT, () => {
-      console.log(`[SUCESSO] Servidor rodando na porta ${PORT}`);
-      console.log(`[INFO] Ambiente: ${process.env.NODE_ENV || 'development'}`);
-    });
-  } catch (error) {
-    console.error('[ERRO] Não foi possível iniciar o servidor:', error);
+  if (loading) {
+    return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
   }
+
+  // O <BrowserRouter> foi removido daqui. O return agora começa com <Routes>.
+  return (
+    <Routes>
+      {/* Rota de Login para o usuário interno */}
+      <Route path="/login" element={authenticated ? <Navigate to="/" /> : <Login />} />
+      
+      {/* Rota principal (Home) protegida */}
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute authenticated={authenticated}>
+            <HomePage googleAccessToken={googleAccessToken} />
+          </ProtectedRoute>
+        }
+      />
+      
+      {/* Rota de Gestão de Clientes protegida */}
+      <Route
+        path="/clients"
+        element={
+          <ProtectedRoute authenticated={authenticated}>
+            <ClientManagementPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Rotas Públicas para Clientes Externos */}
+      <Route path="/client/login" element={<ClientLoginPage />} />
+      <Route path="/client/dashboard" element={<ClientDashboard />} />
+      <Route path="/client/approval/:hash" element={<ClientApprovalPage />} />
+    </Routes>
+  );
 }
 
-start();
+export default App;
