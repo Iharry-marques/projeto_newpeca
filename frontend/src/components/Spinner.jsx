@@ -1,7 +1,6 @@
-// Em: frontend/src/pages/Spinner.jsx
 
 import React from 'react';
-import './Spinner.css'; // Vamos criar este arquivo a seguir
+import './Spinner.css'; 
 
 const Spinner = () => (
   <div className="spinner-overlay">
