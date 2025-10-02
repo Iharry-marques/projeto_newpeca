@@ -1,4 +1,4 @@
-// backend/models/index.js - Atualizado com ACL
+// Em: backend/models/index.js (Código completo atualizado)
 
 const { Sequelize } = require('sequelize');
 const config = require('../config').db;
@@ -14,7 +14,8 @@ const modelDefiners = [
   require('./Client'),
   require('./Campaign'),
   require('./Piece'),
-  require('./CampaignClient'), // Novo modelo ACL
+  require('./CampaignClient'),
+  require('./CreativeLine'), // Adicionado
 ];
 
 for (const modelDefiner of modelDefiners) {
@@ -22,35 +23,26 @@ for (const modelDefiner of modelDefiners) {
 }
 
 // Definir associações
-const { User, Client, Campaign, Piece, CampaignClient } = sequelize.models;
-
-// Associações existentes
-Campaign.hasMany(Piece);
-Piece.belongsTo(Campaign);
+const { User, Client, Campaign, Piece, CampaignClient, CreativeLine } = sequelize.models;
 
 User.hasMany(Campaign, { foreignKey: 'createdBy' });
 Campaign.belongsTo(User, { foreignKey: 'createdBy' });
 
-// NOVAS ASSOCIAÇÕES - ACL Campaign-Client (many-to-many)
-Campaign.belongsToMany(Client, { 
-  through: CampaignClient,
-  foreignKey: 'campaignId',
-  otherKey: 'clientId',
-  as: 'authorizedClients'
-});
+// Campanha tem muitas Linhas Criativas
+Campaign.hasMany(CreativeLine);
+CreativeLine.belongsTo(Campaign);
 
-Client.belongsToMany(Campaign, { 
-  through: CampaignClient,
-  foreignKey: 'clientId',
-  otherKey: 'campaignId',
-  as: 'assignedCampaigns'
-});
+// Linha Criativa tem muitas Peças
+CreativeLine.hasMany(Piece);
+Piece.belongsTo(CreativeLine);
 
-// Associação direta para facilitar queries
+// Relação Cliente-Campanha (Muitos para Muitos)
+Campaign.belongsToMany(Client, { through: CampaignClient, foreignKey: 'campaignId', as: 'authorizedClients' });
+Client.belongsToMany(Campaign, { through: CampaignClient, foreignKey: 'clientId', as: 'assignedCampaigns' });
+
 CampaignClient.belongsTo(Campaign, { foreignKey: 'campaignId' });
 CampaignClient.belongsTo(Client, { foreignKey: 'clientId' });
 
-// Peça pode ser revisada por um cliente
 Piece.belongsTo(Client, { foreignKey: 'reviewedBy', as: 'reviewer' });
 Client.hasMany(Piece, { foreignKey: 'reviewedBy', as: 'reviewedPieces' });
 
