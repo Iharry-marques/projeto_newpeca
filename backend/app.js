@@ -4,7 +4,7 @@ require('dotenv').config();
 
 // --- Importações de Pacotes ---
 const express = require('express');
-const cors = require('cors');
+const cors = require('cors'); // 1. Importe o pacote
 const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
 const bodyParser = require('body-parser');
@@ -25,8 +25,8 @@ app.set('trust proxy', 1);
 
 // 1. CORS
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
-  credentials: true,
+  origin: process.env.FRONTEND_URL, // Permite apenas a origem do seu frontend
+  credentials: true // Permite que o navegador envie cookies
 }));
 
 // 2. Body Parser

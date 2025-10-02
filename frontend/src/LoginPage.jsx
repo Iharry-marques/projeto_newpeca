@@ -1,4 +1,5 @@
 // frontend/src/pages/LoginPage.jsx
+
 export default function LoginPage() {
   const handleLogin = () => {
     // vai direto pro backend iniciar o OAuth
