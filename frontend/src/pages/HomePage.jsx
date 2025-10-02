@@ -231,7 +231,7 @@ const FileUpload = ({ onFilesAdded, onDriveClick, disabled, children }) => {
 };
 
 // --- COMPONENTE PRINCIPAL ---
-const HomePage = () => {
+const HomePage = ({ googleAccessToken }) => {
     // Persistência localStorage
     const [campaigns, setCampaigns] = useState(() => {
         const saved = localStorage.getItem('aprobi-campaigns');
@@ -250,9 +250,6 @@ const HomePage = () => {
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedPieces, setSelectedPieces] = useState(new Set());
 
-    // Google Drive Picker
-    const [googleAccessToken, setGoogleAccessToken] = useState(null);
-
     useEffect(() => {
         localStorage.setItem('aprobi-campaigns', JSON.stringify(campaigns));
     }, [campaigns]);
@@ -266,22 +263,6 @@ const HomePage = () => {
             setSelectedCreativeLineId(null);
         }
     }, [selectedCampaignId]);
-
-    // Busca token do backend
-    useEffect(() => {
-        const fetchToken = async () => {
-            try {
-                const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/me/token`, { credentials: 'include' });
-                if (response.ok) {
-                    const data = await response.json();
-                    setGoogleAccessToken(data.accessToken);
-                }
-            } catch (error) {
-                console.error("Erro ao buscar token do Google:", error);
-            }
-        };
-        fetchToken();
-    }, []);
 
     const handleCreateCreativeLine = (e) => {
         e.preventDefault();
@@ -353,8 +334,8 @@ const HomePage = () => {
             return;
         }
 
-        const DEVELOPER_KEY = 'AIzaSyC_5PqvhXD8sS-woM_HMFcfY08cSJPvs-w'; // <-- COLE SUA CHAVE DE API AQUI
-        const APP_ID = '901573618274'; // <-- COLE APENAS OS NÚMEROS DO SEU GOOGLE_CLIENT_ID AQUI
+        const DEVELOPER_KEY = 'AIzaSyC_5PqvhXD8sS-woM_HMFcfY08cSJPvs-w'; 
+        const APP_ID = '901573618274';
 
         const showPicker = () => {
             const picker = new window.google.picker.PickerBuilder()
