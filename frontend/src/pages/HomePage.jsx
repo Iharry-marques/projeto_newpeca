@@ -4,6 +4,7 @@ import { Upload, Check, FileText, Image, Video, File, X, ChevronDown, PlusCircle
 import aprobiLogo from '../assets/aprobi-logo.jpg';
 import CampaignSelector from '../components/CampaignSelector';
 import CampaignPreviewCard from '../components/CampaignPreviewCard';
+import DriveImportButton from '../components/DriveImportButton';
 
 // -- COMPONENTES INTERNOS --
 
@@ -205,7 +206,7 @@ const FilePopup = ({ file, onClose }) => {
     );
 };
 
-const FileUpload = ({ onFilesAdded, onDriveClick, disabled, children }) => {
+const FileUpload = ({ onFilesAdded, disabled, children, driveButton }) => {
     const [isDragging, setIsDragging] = useState(false);
     const handleDrop = useCallback((e) => { e.preventDefault(); if (disabled) return; setIsDragging(false); onFilesAdded(Array.from(e.dataTransfer.files)); }, [onFilesAdded, disabled]);
     const handleDragOver = useCallback((e) => { e.preventDefault(); if (disabled) return; setIsDragging(true); }, [disabled]);
@@ -220,10 +221,7 @@ const FileUpload = ({ onFilesAdded, onDriveClick, disabled, children }) => {
                     <Upload className="w-5 h-5 mr-2" />
                     Selecionar Arquivos
                 </label>
-                <button onClick={onDriveClick} disabled={disabled} className={`inline-flex items-center px-6 py-3 bg-white border border-slate-300 text-slate-700 font-semibold rounded-xl transition-all duration-200 ${disabled ? 'cursor-not-allowed grayscale' : 'hover:shadow-lg transform hover:scale-105 hover:bg-slate-50'}`}>
-                    <Cloud className="w-5 h-5 mr-2 text-blue-500" />
-                    Importar do Google Drive
-                </button>
+                {driveButton}
             </div>
             <input type="file" multiple onChange={handleFileInput} className="hidden" id="file-input" disabled={disabled} />
         </div>
@@ -327,51 +325,19 @@ const HomePage = ({ googleAccessToken }) => {
         setSelectedCampaignId(newCampaign.id);
     };
 
-    // --- Google Drive Picker ---
-    const handleGoogleDriveClick = () => {
-        if (!googleAccessToken) {
-            alert("Não foi possível obter a permissão para acessar o Google Drive. Tente recarregar a página.");
+    const handleDriveImport = (pieces) => {
+        if (!selectedCreativeLineId) {
+            alert("Por favor, selecione ou crie uma 'Linha Criativa / Pasta' antes de adicionar peças.");
             return;
         }
-
-        const DEVELOPER_KEY = 'AIzaSyC_5PqvhXD8sS-woM_HMFcfY08cSJPvs-w'; 
-        const APP_ID = '901573618274';
-
-        const showPicker = () => {
-            const picker = new window.google.picker.PickerBuilder()
-                .addView(window.google.picker.ViewId.DOCS)
-                .setOAuthToken(googleAccessToken)
-                .setDeveloperKey(DEVELOPER_KEY)
-                .setAppId(APP_ID)
-                .setCallback(pickerCallback)
-                .build();
-            picker.setVisible(true);
-        };
-
-        if (window.google && window.google.picker) {
-            showPicker();
-        } else {
-            const script = document.createElement('script');
-            script.src = 'https://apis.google.com/js/api.js';
-            script.onload = () => {
-                window.gapi.load('picker', showPicker);
-            };
-            document.head.appendChild(script);
-        }
-    };
-
-    const pickerCallback = (data) => {
-        if (data.action === window.google.picker.Action.PICKED) {
-            const files = data.docs.map(doc => ({
-                id: doc.id,
-                name: doc.name,
-                type: doc.mimeType,
-                url: doc.embedUrl || doc.url,
-            }));
-            console.log("Arquivos selecionados do Google Drive:", files);
-            alert(`${files.length} arquivo(s) selecionado(s) do Google Drive!`);
-            // Aqui você pode adicionar lógica para importar os arquivos para a pasta selecionada
-        }
+        
+        setCreativeLines(prevLines =>
+            prevLines.map(line =>
+                line.id === selectedCreativeLineId
+                    ? { ...line, pieces: [...line.pieces, ...pieces] }
+                    : line
+            )
+        );
     };
 
     const selectedCampaign = campaigns.find(c => c.id === selectedCampaignId);
@@ -427,7 +393,18 @@ const HomePage = ({ googleAccessToken }) => {
                         </div>
 
                         <div className="mt-8">
-                            <FileUpload onFilesAdded={handleFilesAdded} onDriveClick={handleGoogleDriveClick} disabled={!selectedCreativeLineId}>
+                            <FileUpload 
+                                onFilesAdded={handleFilesAdded} 
+                                disabled={!selectedCreativeLineId}
+                                driveButton={
+                                    <DriveImportButton
+                                        campaignId={selectedCampaign?.id}
+                                        googleAccessToken={googleAccessToken}
+                                        onImported={handleDriveImport}
+                                        label="Importar do Google Drive"
+                                    />
+                                }
+                            >
                                 <div className="flex flex-col items-center">
                                     <div className={`mx-auto w-16 h-16 bg-gradient-to-br from-[#ffc801] to-[#ffb700] rounded-full flex items-center justify-center mb-4 shadow-lg ${!selectedCreativeLineId ? 'grayscale' : ''}`}>
                                         <Upload className="h-8 w-8 text-white" />
