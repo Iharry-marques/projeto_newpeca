@@ -4,75 +4,73 @@ import React, { useState } from 'react';
 export default function DriveImportButton({
   campaignId,
   googleAccessToken,
-  onImported,          // callback(piecesCriadas[]) -> opcional
+  onImported,
   label = 'Importar do Google Drive',
 }) {
   const [busy, setBusy] = useState(false);
 
-  async function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = src;
-      s.async = true;
-      s.onload = resolve;
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
-
   async function handleClick() {
     if (!googleAccessToken) {
-      alert('Não foi possível obter a permissão para acessar o Google Drive. Faça login e tente novamente.');
+      alert('Permissão do Google Drive ausente. Clique em "Conectar ao Google Drive" e tente novamente.');
       return;
     }
 
     try {
       setBusy(true);
 
-      // Carrega a plataforma Google e o Picker
-      await loadScript('https://apis.google.com/js/api.js');
+      // "api.js" e 'picker' já devem estar carregados pelo App.jsx.
+      if (!window.gapi || !window.google?.picker) {
+        alert('Não consegui preparar o seletor do Google. Atualize a página e tente de novo.');
+        return;
+      }
 
-      await new Promise((resolve) => {
-        window.gapi.load('picker', resolve);
-      });
+      const { google } = window;
 
-      // Monta a view do Picker
-      /* global google */ // (o Picker expõe 'google.picker' no global)
-      const view = new google.picker.DocsView()
+      // view padrão de docs (com pastas)
+      const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
         .setIncludeFolders(true)
-        .setSelectFolderEnabled(true); // se quiser permitir pastas
+        .setSelectFolderEnabled(true);
+
+      // se quiser limitar os tipos selecionáveis (opcional)
+      // .setMimeTypes('image/*,video/*,application/pdf')
 
       const picker = new google.picker.PickerBuilder()
-        .setDeveloperKey(import.meta.env.VITE_GOOGLE_API_KEY)
-        .setOAuthToken(googleAccessToken)
+        .setDeveloperKey(import.meta.env.VITE_GOOGLE_API_KEY)  // a SUA API key deste projeto
+        .setOAuthToken(googleAccessToken)                      // token OAuth da sessão
         .addView(view)
+        .enableFeature(google.picker.Feature.MULTISELECT_ENABLED) // << multiseleção
+        .setSize(1050, 650)                                       // caixa maior
         .setCallback(async (data) => {
           if (data.action === google.picker.Action.PICKED) {
-            const picked = data.docs.map(d => ({
+            const picked = data.docs.map((d) => ({
               id: d.id,
               name: d.name,
               mimeType: d.mimeType,
             }));
 
-            // Envia para o backend baixar e criar as Pieces
-            const res = await fetch(
-              `${import.meta.env.VITE_BACKEND_URL}/campaigns/${campaignId}/import-from-drive`,
-              {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ files: picked }),
+            try {
+              const res = await fetch(
+                `${import.meta.env.VITE_BACKEND_URL}/campaigns/${campaignId}/import-from-drive`,
+                {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ files: picked }),
+                }
+              );
+
+              const text = await res.text();
+              if (!res.ok) {
+                throw new Error(`Falha ao importar do Drive: ${res.status} ${text}`);
               }
-            );
 
-            if (!res.ok) {
-              const t = await res.text();
-              throw new Error(`Falha ao importar do Drive: ${res.status} ${t}`);
+              const json = JSON.parse(text);
+              if (onImported) onImported(json.saved || []);
+              alert(`Importação concluída: ${json.saved?.length || 0} arquivo(s).`);
+            } catch (e) {
+              console.error(e);
+              alert(e.message || 'Erro ao importar do Drive.');
             }
-
-            const json = await res.json();
-            if (onImported) onImported(json.saved || []);
-            alert(`Importação concluída: ${json.saved?.length || 0} arquivo(s).`);
           }
         })
         .build();
@@ -92,7 +90,6 @@ export default function DriveImportButton({
       onClick={handleClick}
       disabled={busy}
       className="inline-flex items-center rounded-lg border px-4 py-2 text-sm font-medium"
-      title="Importar arquivos do seu Google Drive"
     >
       {busy ? 'Abrindo...' : label}
     </button>

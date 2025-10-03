@@ -64,6 +64,40 @@ function App() {
     };
   }, [authenticated, loading]);
 
+  function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+useEffect(() => {
+  let cancelled = false;
+
+  async function bootPicker() {
+    if (!googleAccessToken) return;
+    try {
+      // carrega api.js uma única vez
+      await loadScriptOnce('https://apis.google.com/js/api.js');
+
+      // garante que a lib 'picker' esteja carregada
+      await new Promise((resolve) => {
+        window.gapi.load('picker', resolve);
+      });
+    } catch (e) {
+      if (!cancelled) console.error('Falha ao preparar Google Picker', e);
+    }
+  }
+
+  bootPicker();
+  return () => { cancelled = true; };
+}, [googleAccessToken]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
