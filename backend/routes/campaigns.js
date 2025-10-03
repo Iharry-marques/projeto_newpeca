@@ -67,8 +67,13 @@ router.post("/", ensureAuthenticated, async (req, res) => {
 
     res.status(201).json(campaign);
   } catch (err) {
-    console.error("Erro ao criar campanha:", err);
-    res.status(400).json({ error: err.message });
+    console.error("Erro ao importar do Drive:", err?.status || err?.code || err);
+    if (err?.response?.text) {
+      try {
+        console.error(await err.response.text());
+      } catch {}
+    }
+    res.status(500).json({ error: "Erro interno ao importar do Drive" });
   }
 });
 
@@ -258,70 +263,76 @@ router.post("/:id/detach-pieces", ensureAuthenticated, async (req, res) => {
 router.post("/:id/import-from-drive", ensureAuthenticated, async (req, res) => {
   try {
     const campaignId = req.params.id;
-    const { files } = req.body; // [{ id, name, mimeType }]
+    const { files } = req.body;
 
-    if (!req.session?.accessToken) {
-      return res.status(401).json({ error: "Sem token do Drive na sessão." });
-    }
     if (!Array.isArray(files) || files.length === 0) {
       return res
         .status(400)
         .json({ error: "Nenhum arquivo do Drive informado." });
     }
 
+    if (!req.session?.accessToken) {
+      return res.status(401).json({ error: "Sem token do Drive na sessão." });
+    }
+
     const campaign = await Campaign.findOne({
       where: { id: campaignId, createdBy: req.user.id },
     });
-    if (!campaign)
+    if (!campaign) {
       return res.status(404).json({ error: "Campanha não encontrada" });
+    }
 
+    const token = req.session.accessToken;
     const saved = [];
 
     for (const f of files) {
-      // URL para download do arquivo (exemplo, ajuste conforme a API do Google Drive v3)
-      const url = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
+      try {
+        const url = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
+        const r = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
-      // Baixa o arquivo do Drive usando fetch nativo
-      const r = await fetch(url, {
-        headers: { Authorization: `Bearer ${req.session.accessToken}` },
-      });
-      if (!r.ok || !r.body) {
-        const txt = await r.text();
-        throw new Error(`Falha ao baixar ${f.id}: ${r.status} ${txt}`);
+        if (!r.ok || !r.body) {
+          const txt = await r.text();
+          console.error("[Drive] Falha download", f.id, r.status, txt);
+          return res.status(r.status).json({
+            error: `Falha ao baixar ${f.name || f.id}: ${r.statusText}`,
+            details: txt?.slice(0, 500),
+          });
+        }
+
+        const safeName = (f.name || `${f.id}`).replace(/[^\w.\-() ]/g, "_");
+        const filePath = path.join(uploadDir, safeName);
+
+        await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(filePath));
+        const stat = await fs.promises.stat(filePath);
+
+        const piece = await Piece.create({
+          filename: safeName,
+          originalName: f.name || safeName,
+          mimetype: f.mimeType || "application/octet-stream",
+          size: stat.size,
+          status: "uploaded",
+          CampaignId: campaignId,
+        });
+
+        saved.push(piece);
+      } catch (e) {
+        console.error("[Drive] Erro ao salvar arquivo", f, e);
+        return res
+          .status(500)
+          .json({ error: "Erro ao salvar arquivo do Drive", details: e.message });
       }
-
-      // Nome seguro + caminho destino
-      const safeName = (f.name || `${f.id}`).replace(/[^\w.\-() ]/g, "_");
-      const filePath = path.join(uploadDir, safeName);
-
-      // ================== ALTERAÇÃO APLICADA AQUI ==================
-      // Converte o WebStream (do fetch) para um Node.js Stream e usa pipeline
-      // para salvar em disco de forma segura.
-      await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(filePath));
-
-      // Pega o status do arquivo de forma assíncrona
-      const stat = await fs.promises.stat(filePath);
-      // =============================================================
-
-      const piece = await Piece.create({
-        filename: safeName, // salvo em uploads/safeName
-        originalName: f.name || safeName,
-        mimetype: f.mimeType || "application/octet-stream",
-        size: stat.size,
-        status: "uploaded", // estado inicial
-        CampaignId: campaignId,
-      });
-
-      saved.push(piece);
     }
 
-    res.json({ ok: true, saved });
+    return res.json({ ok: true, saved });
   } catch (err) {
     console.error("Erro ao importar do Drive:", err);
-    res.status(500).json({ error: "Erro interno ao importar do Drive" });
+    return res
+      .status(500)
+      .json({ error: "Erro interno ao importar do Drive", details: err.message });
   }
 });
-
 
 /* ================== ENVIO PARA CLIENTE ================== */
 
@@ -341,11 +352,9 @@ router.post("/:id/send-for-approval", ensureAuthenticated, async (req, res) => {
       return res.status(404).json({ error: "Campanha não encontrada" });
 
     if (!campaign.Pieces || campaign.Pieces.length === 0) {
-      return res
-        .status(400)
-        .json({
-          error: "Não é possível enviar uma campanha sem peças anexadas",
-        });
+      return res.status(400).json({
+        error: "Não é possível enviar uma campanha sem peças anexadas",
+      });
     }
 
     if (campaign.status !== "draft") {

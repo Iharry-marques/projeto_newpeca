@@ -95,6 +95,10 @@ googleAuthRouter.get(
   })
 );
 
+googleAuthRouter.get('/auth/google', (req, res, next) => {
+  res.redirect('/auth/google/drive-consent');
+});
+
 
 // Rota de callback do Google (comum para ambas as autenticações)
 googleAuthRouter.get(

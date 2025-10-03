@@ -63,7 +63,6 @@ app.use(passport.session());
 app.use(googleAuthRouter);
 app.use('/me', meRouter);
 
-// *** A CORREÇÃO ESTÁ AQUI ***
 // Precisamos usar a propriedade .router do objeto importado
 app.use('/client-auth', clientAuthRoutes.router);
 
@@ -72,6 +71,18 @@ app.use('/campaigns', ensureAuth, campaignRoutes);
 app.use('/clients', ensureAuth, clientManagementRoutes);
 app.use('/approval', approvalRoutes);
 
+app.get('/__routes', (req, res) => {
+  const out = [];
+  app._router.stack.forEach((m) => {
+    if (m.route?.path) out.push(`[APP] ${Object.keys(m.route.methods).join(',').toUpperCase()} ${m.route.path}`);
+    if (m.name === 'router' && m.handle?.stack) {
+      m.handle.stack.forEach((r) => {
+        if (r.route?.path) out.push(`[ROUTER] ${Object.keys(r.route.methods).join(',').toUpperCase()} ${r.route.path}`);
+      });
+    }
+  });
+  res.type('text/plain').send(out.sort().join('\n'));
+});
 
 app.use(errorHandler);
 
