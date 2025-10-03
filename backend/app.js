@@ -1,3 +1,4 @@
+// Em: backend/app.js (VERSÃO FINAL E CORRIGIDA)
 
 require('dotenv').config();
 
@@ -7,10 +8,11 @@ const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
 const bodyParser = require('body-parser');
 
+// Importações dos Módulos do Projeto
 const { googleAuthRouter, ensureAuth, meRouter, passport } = require('./auth');
 const campaignRoutes = require('./routes/campaigns');
 const clientManagementRoutes = require('./routes/clientManagement');
-const clientAuthRoutes = require('./routes/clientAuth');
+const clientAuthRoutes = require('./routes/clientAuth'); // Importa o objeto { router, authenticateClient }
 const approvalRoutes = require('./routes/approval');
 const { sequelize } = require('./models');
 const errorHandler = require('./middleware/errorHandler');
@@ -37,14 +39,22 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: isProduction,
+      secure: false,
       httpOnly: true,
       sameSite: isProduction ? 'none' : 'lax',
-      proxy: isProduction,
       maxAge: 24 * 60 * 60 * 1000,
     },
   })
 );
+
+app.get('/debug/session', (req, res) => {
+  res.json({
+    user: req.user ? req.user.username : null,
+    hasAccessToken: !!(req.session && req.session.accessToken),
+    sessionKeys: req.session ? Object.keys(req.session) : [],
+  });
+});
+
 
 app.use(passport.initialize());
 app.use(passport.session());
@@ -52,7 +62,10 @@ app.use(passport.session());
 // --- ROTAS ---
 app.use(googleAuthRouter);
 app.use('/me', meRouter);
-app.use('/client-auth', clientAuthRoutes);
+
+// *** A CORREÇÃO ESTÁ AQUI ***
+// Precisamos usar a propriedade .router do objeto importado
+app.use('/client-auth', clientAuthRoutes.router);
 
 // Rotas Protegidas
 app.use('/campaigns', ensureAuth, campaignRoutes);
@@ -66,7 +79,7 @@ const PORT = process.env.PORT || 3000;
 
 async function start() {
   try {
-    await sequelize.sync();
+    await sequelize.sync({ alter: true });
     app.listen(PORT, () => {
       console.log(`[SUCESSO] Servidor rodando na porta ${PORT}`);
       console.log(`[INFO] Ambiente: ${process.env.NODE_ENV || 'development'}`);

@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { Campaign, Piece, User, Client, CampaignClient } = require('../models');
+const { authenticateClient } = require('./clientAuth');
 const router = express.Router();
 
 // Middleware para verificar se é usuário Suno
