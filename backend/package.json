@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "main": "app.js",
   "type": "commonjs",
-  "scripts": {
-    "dev": "NODE_ENV=development node app.js",
-    "start": "NODE_ENV=production node app.js"
-  },
+"scripts": {
+  "dev": "NODE_ENV=development node app.js",
+  "start": "node app.js" 
+},
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "connect-sqlite3": "^0.9.16",
