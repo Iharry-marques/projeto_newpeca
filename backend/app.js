@@ -10,16 +10,15 @@ const bodyParser = require("body-parser");
 const creativeLineRoutes = require('./routes/creativeLines');
 const pieceRoutes = require('./routes/pieces');
 
-
 // Importações dos Módulos do Projeto
 const { googleAuthRouter, ensureAuth, meRouter, passport } = require("./auth");
 const campaignRoutes = require("./routes/campaigns");
+const filesRoutes = require("./routes/files"); // <-- 1. Importa a nova rota
 const clientManagementRoutes = require("./routes/clientManagement");
-const clientAuthRoutes = require("./routes/clientAuth"); // Importa o objeto { router, authenticateClient }
+const clientAuthRoutes = require("./routes/clientAuth");
 const approvalRoutes = require("./routes/approval");
 const { sequelize } = require("./models");
 const errorHandler = require("./middleware/errorHandler");
-
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -67,17 +66,17 @@ app.use(passport.session());
 // --- ROTAS ---
 app.use(googleAuthRouter);
 app.use("/me", meRouter);
-
-// Precisamos usar a propriedade .router do objeto importado
 app.use("/client-auth", clientAuthRoutes.router);
-app.use('/creative-lines', creativeLineRoutes);
-app.use('/pieces', pieceRoutes);
+app.use('/creative-lines', ensureAuth, creativeLineRoutes); // Protegida
+app.use('/pieces', ensureAuth, pieceRoutes); // Protegida
 
+// <-- 2. Rota PÚBLICA para servir arquivos (usada na pré-visualização e PPTX)
+app.use('/campaigns', filesRoutes);
 
-// Rotas Protegidas
+// <-- 3. Rotas PROTEGIDAS para gerenciar campanhas
 app.use("/campaigns", ensureAuth, campaignRoutes);
 app.use("/clients", ensureAuth, clientManagementRoutes);
-app.use("/approval", approvalRoutes);
+app.use("/approval", approvalRoutes); // As rotas internas de approval já têm sua própria proteção
 
 app.get("/__routes", (req, res) => {
   const out = [];
@@ -109,7 +108,6 @@ const PORT = process.env.PORT || 3000;
 async function start() {
   try {
     await sequelize.sync({ alter: true });
-    // Mantenha apenas esta chamada do app.listen()
     app.listen(PORT, () => {
       console.log(`[SUCESSO] Servidor rodando na porta ${PORT}`);
       console.log(`[INFO] Ambiente: ${process.env.NODE_ENV || "development"}`);

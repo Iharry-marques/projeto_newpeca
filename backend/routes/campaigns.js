@@ -1,4 +1,4 @@
-// Em: backend/routes/campaigns.js (VERSÃO FINAL E COMPLETA)
+// Em: backend/routes/campaigns.js 
 
 const express = require('express');
 const router = express.Router();
@@ -7,14 +7,11 @@ const fs = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
 const puppeteer = require('puppeteer');
-const { Readable } = require('node:stream');
-const { pipeline } = require('node:stream/promises');
 const { Op } = require('sequelize');
 const PptxGenJS = require('pptxgenjs');
-
+const fetch = require('node-fetch'); // Importe o node-fetch
 
 const { Campaign, CreativeLine, Piece, Client, CampaignClient } = require('../models');
-// CORREÇÃO: A função de autenticação é exportada como 'ensureAuth' e não 'ensureAuthenticated'
 const { ensureAuth } = require('../auth');
 
 // --- Configuração de Upload ---
@@ -44,9 +41,30 @@ function makeApprovalHash() {
   return crypto.randomBytes(16).toString('hex');
 }
 
+function inferImageMimeFromName(name = '') {
+  const ext = name.toLowerCase().split('.').pop();
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    case 'svg':
+    case 'svg+xml':
+      return 'image/svg+xml';
+    case 'bmp':
+      return 'image/bmp';
+    case 'heic':
+      return 'image/heic';
+    case 'png':
+    default:
+      return 'image/png';
+  }
+}
 
-/* ================== ROTAS DE CAMPANHAS ================== */
-
+// ================== ROTAS DE CAMPANHAS (Sem alterações) ==================
 // LISTAR todas as campanhas do usuário
 router.get('/', ensureAuth, async (req, res, next) => {
   try {
@@ -106,8 +124,7 @@ router.get('/:id', ensureAuth, async (req, res, next) => {
 });
 
 
-/* ================== ROTAS DE LINHAS CRIATIVAS ================== */
-
+// ================== ROTAS DE LINHAS CRIATIVAS (Sem alterações) ==================
 // LISTAR linhas criativas de uma campanha
 router.get('/:campaignId/creative-lines', ensureAuth, async (req, res, next) => {
   try {
@@ -144,9 +161,7 @@ router.post('/:campaignId/creative-lines', ensureAuth, async (req, res, next) =>
 });
 
 
-/* ================== ROTAS DE UPLOAD & IMPORTAÇÃO DE PEÇAS ================== */
-
-// UPLOAD LOCAL (adaptado para o novo fluxo com Linhas Criativas)
+// ================== ROTAS DE UPLOAD & IMPORTAÇÃO DE PEÇAS (Sem alterações) ==================
 router.post('/:campaignId/upload', ensureAuth, upload.array('files'), async (req, res, next) => {
   try {
     const { campaignId } = req.params;
@@ -167,7 +182,7 @@ router.post('/:campaignId/upload', ensureAuth, upload.array('files'), async (req
           mimetype: file.mimetype,
           size: file.size,
           status: 'uploaded',
-          CreativeLineId: line.id, // CORRIGIDO
+          CreativeLineId: line.id,
         })
       )
     );
@@ -177,7 +192,6 @@ router.post('/:campaignId/upload', ensureAuth, upload.array('files'), async (req
   }
 });
 
-// IMPORTAÇÃO DO GOOGLE DRIVE (CORRIGIDO)
 router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next) => {
   try {
     const { campaignId } = req.params;
@@ -207,7 +221,7 @@ router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next)
           originalName: file.name,
           mimetype: file.mimeType || 'application/octet-stream',
           status: 'imported',
-          CreativeLineId: creativeLine.id, // CORRIGIDO
+          CreativeLineId: creativeLine.id,
           driveId: file.id,
           size: file.size || null,
         }
@@ -223,8 +237,7 @@ router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next)
 });
 
 
-/* ================== ROTAS DE ENVIO E APROVAÇÃO ================== */
-
+// ================== ROTAS DE ENVIO E APROVAÇÃO (Sem alterações) ==================
 router.post('/:id/send-for-approval', ensureAuth, async (req, res, next) => {
   try {
     const campaignId = req.params.id;
@@ -273,8 +286,7 @@ router.post('/:id/send-for-approval', ensureAuth, async (req, res, next) => {
   }
 });
 
-/* ================== ROTA DE EXPORTAÇÃO DE PDF ================== */
-
+// ================== ROTA DE EXPORTAÇÃO DE PDF (Sem alterações) ==================
 router.get('/:id/export-pdf', ensureAuth, async (req, res, next) => {
   try {
     const campaignId = req.params.id;
@@ -336,30 +348,72 @@ router.get('/:id/export-pdf', ensureAuth, async (req, res, next) => {
   }
 });
 
-/* ================== ROTA PARA SERVIR ARQUIVOS LOCAIS ================== */
 
-router.get('/files/:filename', (req, res) => {
-  const filePath = path.join(uploadDir, req.params.filename);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'Arquivo não encontrado' });
+// ================== ROTA DE EXPORTAÇÃO DE PPT (MODIFICADA) ==================
+
+// NOVA FUNÇÃO para buscar a imagem e converter para Base64
+async function getImageAsBase64(piece, options = {}) {
+  const { accessToken, mimeOverride } = options;
+  const targetMime = mimeOverride || piece.mimetype || 'image/png';
+  try {
+    // Se for arquivo local
+    if (piece.filename) {
+      const filePath = path.join(uploadDir, piece.filename);
+      if (fs.existsSync(filePath)) {
+        const fileBuffer = await fs.promises.readFile(filePath);
+        return `data:${targetMime};base64,${fileBuffer.toString('base64')}`;
+      }
+    }
+    // Se for do Google Drive
+    if (piece.driveId) {
+      // Quando temos o token, usamos a API oficial do Drive; caso contrário, caímos no link público.
+      const headers = {};
+      let driveUrl = `https://drive.google.com/uc?export=download&id=${piece.driveId}`;
+
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
+        driveUrl = `https://www.googleapis.com/drive/v3/files/${piece.driveId}?alt=media`;
+      }
+
+      const response = await fetch(driveUrl, { headers });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch from Drive (${response.status}): ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('content-type') || targetMime || 'application/octet-stream';
+      if (!contentType.startsWith('image/')) {
+        throw new Error(`Conteúdo inválido recebido do Drive (${contentType})`);
+      }
+
+      const imageBuffer = await response.buffer();
+      const mime = contentType.startsWith('image/') ? contentType : targetMime;
+      return `data:${mime};base64,${imageBuffer.toString('base64')}`;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Erro ao processar a peça ${piece.originalName}:`, error.message);
+    return null; // Retorna nulo se falhar, para não quebrar a geração
   }
-  res.sendFile(filePath);
-});
+}
 
-/* ================== ROTA DE EXPORTAÇÃO DE PPT ================== */
 router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
   try {
+    const driveAccessToken = req.session?.accessToken || null;
+    if (!driveAccessToken) {
+      console.warn('[export-ppt] Nenhum token do Google Drive encontrado na sessão. Tentando links públicos.');
+    }
+
     const campaignId = req.params.id;
     const campaign = await Campaign.findOne({
       where: { id: campaignId, createdBy: req.user.id },
       include: [{
         model: CreativeLine,
         as: 'creativeLines',
-        order: [['createdAt', 'ASC']], // Ordena as linhas criativas
+        order: [['createdAt', 'ASC']],
         include: [{
           model: Piece,
           as: 'pieces',
-          order: [['order', 'ASC'], ['createdAt', 'ASC']], // Ordena as peças
+          order: [['order', 'ASC'], ['createdAt', 'ASC']],
         }],
       }],
     });
@@ -370,7 +424,7 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
 
     // 1. Inicia a apresentação
     let pptx = new PptxGenJS();
-    pptx.layout = 'LAYOUT_16x9'; // Layout widescreen padrão
+    pptx.layout = 'LAYOUT_16x9';
 
     const GREEN_BG = '00B050';
     const WHITE_TEXT = 'FFFFFF';
@@ -378,9 +432,10 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
 
     // 2. SLIDE 1: Capa Inicial
     let slideCapa = pptx.addSlide();
-    slideCapa.addImage({ path: COVER_IMAGE_PATH, w: '100%', h: '100%' });
-
-    // 3. SLIDE 2: Título da Campanha
+    const capaBase64 = fs.readFileSync(COVER_IMAGE_PATH, 'base64');
+    slideCapa.addImage({ data: `data:image/png;base64,${capaBase64}`, w: '100%', h: '100%' });
+    
+    // 3. SLIDE 2: Título da Campanha (FUNDO VERDE)
     let slideTituloCampanha = pptx.addSlide();
     slideTituloCampanha.background = { color: GREEN_BG };
     slideTituloCampanha.addText(campaign.name, { 
@@ -390,7 +445,7 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
 
     // 4. Itera sobre cada Linha Criativa e suas Peças
     for (const line of (campaign.creativeLines || [])) {
-      // SLIDE TÍTULO DA LINHA CRIATIVA
+      // SLIDE TÍTULO DA LINHA CRIATIVA (FUNDO VERDE)
       let slideTituloLinha = pptx.addSlide();
       slideTituloLinha.background = { color: GREEN_BG };
       slideTituloLinha.addText(line.name, { 
@@ -401,25 +456,42 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
       // SLIDES DE CONTEÚDO (PEÇAS)
       for (const piece of (line.pieces || [])) {
         let slidePeca = pptx.addSlide();
-        const isImage = (piece.mimetype || '').startsWith('image/');
+        const hasImageMime = (piece.mimetype || '').startsWith('image/');
+        const nameLooksImage = /\.(png|jpe?g|gif|webp|bmp|svg|heic)$/i.test(piece.originalName || '');
+        const isImage = hasImageMime || nameLooksImage;
 
-        // Define a URL da imagem, seja do Drive ou de upload local
-        const imageUrl = piece.driveId 
-          ? `https://drive.google.com/uc?export=view&id=${piece.driveId}` 
-          : (piece.filename ? `${process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 3000}`}/campaigns/files/${piece.filename}` : null);
-
-        if (isImage && imageUrl) {
-          // Adiciona a imagem centralizada
-          slidePeca.addImage({ path: imageUrl, x: '5%', y: '15%', w: '90%', h: '70%' });
-          
-          // Adiciona o "molde verde" com o nome da peça
-          slidePeca.addText(piece.originalName, {
-            x: '5%', y: '10%', w: '90%', h: 0.5,
-            align: 'center', fill: { color: GREEN_BG }, color: WHITE_TEXT,
-            fontSize: 14,
+        if (isImage) {
+          const mimeOverride = hasImageMime ? undefined : inferImageMimeFromName(piece.originalName || '');
+          const imageBase64 = await getImageAsBase64(piece, {
+            accessToken: driveAccessToken,
+            mimeOverride,
           });
+          if (imageBase64) {
+            // Adiciona a imagem usando Base64
+            slidePeca.addImage({
+              data: imageBase64,
+              x: '5%', y: '15%', w: '90%', h: '70%',
+              sizing: { type: 'contain', w: '90%', h: '70%' } // Garante que a imagem caiba no espaço
+            });
+            
+            // Adiciona a barra verde com o nome da peça
+            slidePeca.addShape(pptx.shapes.RECTANGLE, {
+              x: 0, y: 0, w: '100%', h: 0.5, fill: { color: GREEN_BG }
+            });
+            slidePeca.addText(piece.originalName, {
+              x: 0, y: 0, w: '100%', h: 0.5,
+              align: 'center', color: WHITE_TEXT, fontSize: 16, valign: 'middle'
+            });
+
+          } else {
+            // Fallback se a imagem não puder ser carregada
+            slidePeca.addText(`[Falha ao carregar a imagem: "${piece.originalName}"]`, { 
+                x: 0, y: '45%', w: '100%', align: 'center', color: 'C00000' 
+            });
+          }
         } else {
-          slidePeca.addText(`[Pré-visualização não disponível para "${piece.originalName}"]`, { 
+          // Para arquivos que não são imagens
+          slidePeca.addText(`[Pré-visualização não disponível para "${piece.originalName}"]\n(${piece.mimetype})`, { 
               x: 0, y: '45%', w: '100%', align: 'center', color: '6c757d' 
           });
         }
@@ -428,17 +500,18 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
 
     // 5. SLIDE FINAL: Repete a capa
     let slideFinal = pptx.addSlide();
-    slideFinal.addImage({ path: COVER_IMAGE_PATH, w: '100%', h: '100%' });
-
+    slideFinal.addImage({ data: `data:image/png;base64,${capaBase64}`, w: '100%', h: '100%' });
 
     // 6. Gera o arquivo e envia para o usuário
     const filename = `${safeFilename(campaign.name)}.pptx`;
+    const pptxBuffer = await pptx.write('arraybuffer');
+
     res.writeHead(200, {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      'Content-Disposition': `attachment; filename=${filename}`,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pptxBuffer.byteLength,
     });
-    const data = await pptx.stream();
-    res.end(data);
+    res.end(Buffer.from(pptxBuffer));
 
   } catch (error) {
     console.error("Erro ao gerar PPT:", error);
