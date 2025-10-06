@@ -1,4 +1,4 @@
-// Em: backend/routes/pieces.js (ARQUIVO NOVO E COMPLETO)
+// Em: backend/routes/pieces.js (VERSÃO FINAL CORRIGIDA)
 
 const express = require('express');
 const router = express.Router();
@@ -15,17 +15,16 @@ router.delete('/', ensureAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'Nenhum ID de peça foi fornecido.' });
     }
 
-    // --- Verificação de Segurança ---
-    // Garante que o usuário só possa apagar peças de campanhas que ele criou.
+    // --- Verificação de Segurança (CORRIGIDA) ---
     const piecesToDelete = await Piece.findAll({
-      where: {
-        id: { [Op.in]: pieceIds }
-      },
+      where: { id: { [Op.in]: pieceIds } },
       include: {
         model: CreativeLine,
+        as: 'creativeLine', // <-- CORREÇÃO APLICADA AQUI
         attributes: ['id'],
         include: {
           model: Campaign,
+          as: 'Campaign', // Usar o alias padrão do Sequelize
           attributes: ['createdBy']
         }
       }
@@ -35,17 +34,13 @@ router.delete('/', ensureAuth, async (req, res, next) => {
         return res.status(404).json({ error: 'Nenhuma das peças foi encontrada.' });
     }
 
-    const isOwner = piecesToDelete.every(p => p.CreativeLine?.Campaign?.createdBy === req.user.id);
+    const isOwner = piecesToDelete.every(p => p.creativeLine?.Campaign?.createdBy === req.user.id);
     if (!isOwner) {
       return res.status(403).json({ error: 'Acesso negado para apagar uma ou mais peças.' });
     }
-    // --- Fim da Verificação de Segurança ---
+    // --- Fim da Verificação ---
 
-    const deletedCount = await Piece.destroy({
-      where: {
-        id: { [Op.in]: pieceIds }
-      }
-    });
+    const deletedCount = await Piece.destroy({ where: { id: { [Op.in]: pieceIds } } });
 
     res.status(200).json({ message: `${deletedCount} peças foram apagadas com sucesso.` });
 
