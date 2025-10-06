@@ -3,24 +3,17 @@
 const { Sequelize } = require('sequelize');
 const config = require('../config').db;
 
-// Inicializa a conexão com o banco de dados
 const sequelize = new Sequelize({
   dialect: config.dialect,
   storage: config.storage,
-  logging: false, // Desligar os logs do SQL no console para uma visão mais limpa
+  logging: false, // Desligado para um console mais limpo
 });
 
-// Lista dos arquivos que definem os modelos
+// Carrega todos os modelos
 const modelDefiners = [
-  require('./User'),
-  require('./Client'),
-  require('./Campaign'),
-  require('./Piece'),
-  require('./CampaignClient'),
-  require('./CreativeLine'),
+  require('./User'), require('./Client'), require('./Campaign'),
+  require('./Piece'), require('./CampaignClient'), require('./CreativeLine'),
 ];
-
-// Carrega cada modelo na instância do Sequelize
 for (const modelDefiner of modelDefiners) {
   modelDefiner(sequelize);
 }
@@ -29,32 +22,27 @@ for (const modelDefiner of modelDefiners) {
 const { User, Client, Campaign, Piece, CampaignClient, CreativeLine } = sequelize.models;
 
 /* =========================== ASSOCIAÇÕES =========================== */
-// Define as relações entre as tabelas
 
-// User <-> Campaign (Um usuário cria muitas campanhas)
-User.hasMany(Campaign, { foreignKey: 'createdBy', as: 'campaigns' });
-Campaign.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+// User <-> Campaign
+User.hasMany(Campaign, { as: 'campaigns', foreignKey: 'createdBy' });
+Campaign.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
 
-// Campaign <-> CreativeLine (Uma campanha tem muitas linhas criativas)
+// Campaign <-> CreativeLine
 Campaign.hasMany(CreativeLine, { as: 'creativeLines', foreignKey: 'CampaignId', onDelete: 'CASCADE' });
-CreativeLine.belongsTo(Campaign, { foreignKey: 'CampaignId' }); // O alias 'campaign' é opcional aqui
+CreativeLine.belongsTo(Campaign, { as: 'campaign', foreignKey: 'CampaignId' });
 
-// CreativeLine <-> Piece (Uma linha criativa tem muitas peças)
+// CreativeLine <-> Piece
 CreativeLine.hasMany(Piece, { as: 'pieces', foreignKey: 'CreativeLineId', onDelete: 'CASCADE' });
-Piece.belongsTo(CreativeLine, { as: 'creativeLine', foreignKey: 'CreativeLineId' }); // Relação inversa necessária
+Piece.belongsTo(CreativeLine, { as: 'creativeLine', foreignKey: 'CreativeLineId' });
 
-// Campaign <-> Client (Muitos para Muitos, via CampaignClient)
-Campaign.belongsToMany(Client, { through: CampaignClient, foreignKey: 'campaignId', as: 'authorizedClients' });
-Client.belongsToMany(Campaign, { through: CampaignClient, foreignKey: 'clientId', as: 'assignedCampaigns' });
+// Campaign <-> Client (Muitos-para-Muitos)
+Campaign.belongsToMany(Client, { through: CampaignClient, as: 'authorizedClients', foreignKey: 'campaignId' });
+Client.belongsToMany(Campaign, { through: CampaignClient, as: 'assignedCampaigns', foreignKey: 'clientId' });
 
-// Piece <-> Client (Um cliente revisa muitas peças)
-Piece.belongsTo(Client, { foreignKey: 'reviewedBy', as: 'reviewer' });
-Client.hasMany(Piece, { foreignKey: 'reviewedBy', as: 'reviewedPieces' });
+// Piece <-> Client (Revisor)
+Piece.belongsTo(Client, { as: 'reviewer', foreignKey: 'reviewedBy' });
+Client.hasMany(Piece, { as: 'reviewedPieces', foreignKey: 'reviewedBy' });
 
 
 /* ========================= EXPORTAÇÃO ========================= */
-// Exporta a instância do Sequelize e todos os modelos
-module.exports = {
-  sequelize,
-  ...sequelize.models
-};
+module.exports = { sequelize, ...sequelize.models };
