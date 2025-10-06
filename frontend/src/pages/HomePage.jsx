@@ -243,7 +243,7 @@ const HomePage = ({ googleAccessToken }) => {
     return (
         <div className="h-screen w-screen bg-slate-100 flex flex-col antialiased">
             <header className="bg-white shadow-sm border-b border-slate-200 flex-shrink-0 z-10">
-                <div className="max-w-full mx-auto px-6 h-20 flex items-center justify-between">
+                <div className="max-w-full mx-auto px-6 h-24 flex items-center justify-between">
                     <div className="flex items-center space-x-4">
                         <img src={aprobiLogo} alt="Aprobi Logo" className="w-24 h-auto" />
                     </div>
