@@ -1,4 +1,4 @@
-// Em: frontend/src/pages/HomePage.jsx (VERSÃO FINAL, COMPLETA E CORRIGIDA)
+// Em: frontend/src/pages/HomePage.jsx (VERSÃO FINAL, COM PROXY DO DRIVE)
 
 import React, { useState, useCallback, useEffect, Fragment } from "react";
 import { Listbox, Transition } from "@headlessui/react";
@@ -10,14 +10,6 @@ import CampaignSelector from "../components/CampaignSelector";
 import CampaignPreviewCard from "../components/CampaignPreviewCard";
 import DriveImportButton from "../components/DriveImportButton";
 
-// =================== DADOS AUXILIARES ===================
-const clients = [
-    { name: "AMERICANAS" }, { name: "ARAMIS" }, { name: "CANTU" }, { name: "COGNA" }, { name: "ESPORTE DA SORTE" },
-    { name: "HASDEX" }, { name: "HORTIFRUTI NATURAL DA TERRA" }, { name: "IDEAZARVOS" }, { name: "KEETA" },
-    { name: "MASTERCARD" }, { name: "O BOTICARIO" }, { name: "RD" }, { name: "SAMSUNG" },
-    { name: "SAMSUNG E STORE" }, { name: "SICREDI" }, { name: "VIVO" },
-].sort((a, b) => a.name.localeCompare(b.name));
-
 // =================== COMPONENTES INTERNOS ===================
 const FileTypeIcon = ({ fileType }) => {
     if ((fileType || "").startsWith("image/")) return <ImageIcon className="w-5 h-5 text-blue-500" />;
@@ -25,19 +17,31 @@ const FileTypeIcon = ({ fileType }) => {
     return <FileIcon className="w-5 h-5 text-slate-500" />;
 };
 
+// COMPONENTE ATUALIZADO PARA USAR A ROTA DE PROXY
 const FileViewer = ({ file, onOpenPopup, isSelectionMode, isSelected, onSelect }) => {
     const mime = file.type || file.mimetype || "";
     const name = file.name || file.originalName || file.filename || "arquivo";
-    const url = file.url || (file.filename ? `${import.meta.env.VITE_BACKEND_URL}/campaigns/files/${file.filename}` : null);
+    
+    // LÓGICA DA URL ATUALIZADA
+    let url = null;
+    if (file.filename) { // Arquivo local
+      url = `${import.meta.env.VITE_BACKEND_URL}/campaigns/files/${file.filename}`;
+    } else if (file.driveId) { // Arquivo do Drive (usa a nova rota de proxy)
+      url = `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${file.id}`;
+    }
+    
     const handleCardClick = () => {
         if (isSelectionMode) onSelect(file.id);
+        // Passamos a URL já resolvida para o popup
         else onOpenPopup({ ...file, _resolved: { mime, name, url } });
     };
+    
     const renderPreview = () => {
         if (mime.startsWith("image/") && url) return <img src={url} alt={name} className="w-full h-48 object-cover rounded-xl" />;
         if (mime.startsWith("video/")) return <div className="w-full h-48 bg-purple-100 rounded-xl flex items-center justify-center"><VideoIcon className="w-16 h-16 text-purple-400" /></div>;
         return <div className="w-full h-48 bg-slate-100 rounded-xl flex items-center justify-center"><FileIcon className="w-16 h-16 text-slate-400" /></div>;
     };
+
     return (
         <div className="relative" onClick={handleCardClick}>
             {isSelectionMode && <div className="absolute top-2 right-2 z-10 w-6 h-6 bg-white rounded-full border-2 flex items-center justify-center pointer-events-none">{isSelected && <Check className="w-4 h-4 text-emerald-500" />}</div>}
@@ -49,11 +53,18 @@ const FileViewer = ({ file, onOpenPopup, isSelectionMode, isSelected, onSelect }
     );
 };
 
+
 const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
     const [name, setName] = useState("");
     const [selectedClient, setSelectedClient] = useState(null);
     const [error, setError] = useState("");
     const [isCreating, setIsCreating] = useState(false);
+     const clients = [
+        { name: "AMERICANAS" }, { name: "ARAMIS" }, { name: "CANTU" }, { name: "COGNA" }, { name: "ESPORTE DA SORTE" },
+        { name: "HASDEX" }, { name: "HORTIFRUTI NATURAL DA TERRA" }, { name: "IDEAZARVOS" }, { name: "KEETA" },
+        { name: "MASTERCARD" }, { name: "O BOTICARIO" }, { name: "RD" }, { name: "SAMSUNG" },
+        { name: "SAMSUNG E STORE" }, { name: "SICREDI" }, { name: "VIVO" },
+    ].sort((a, b) => a.name.localeCompare(b.name));
     if (!isOpen) return null;
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -84,9 +95,7 @@ const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
 
 const FilePopup = ({ file, onClose }) => {
     if (!file) return null;
-    const mime = file._resolved?.mime || file.type || file.mimetype || "";
-    const name = file._resolved?.name || file.name || file.originalName || file.filename;
-    const url = file._resolved?.url || file.url || (file.filename ? `${import.meta.env.VITE_BACKEND_URL}/campaigns/files/${file.filename}` : null);
+    const { mime, name, url } = file._resolved;
     const renderContent = () => {
         if (mime.startsWith("image/") && url) return <img src={url} alt={name} className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg" />;
         if (mime.startsWith("video/") && url) return <video src={url} controls autoPlay className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg" />;
@@ -150,14 +159,8 @@ const HomePage = ({ googleAccessToken }) => {
         }
     }, []);
 
-    useEffect(() => {
-        fetchCampaigns();
-    }, [fetchCampaigns]);
-
-    useEffect(() => {
-        fetchCreativeLines(selectedCampaignId);
-        setSelectedCreativeLineId(null);
-    }, [selectedCampaignId, fetchCreativeLines]);
+    useEffect(() => { fetchCampaigns(); }, [fetchCampaigns]);
+    useEffect(() => { fetchCreativeLines(selectedCampaignId); setSelectedCreativeLineId(null); }, [selectedCampaignId, fetchCreativeLines]);
 
     const handleCampaignCreated = (newCampaign) => {
         setCampaigns((prev) => [newCampaign, ...prev]);
@@ -197,7 +200,7 @@ const HomePage = ({ googleAccessToken }) => {
             }
         }
     };
-
+    
     const handleDeleteCreativeLine = async (lineId, lineName) => {
         if (window.confirm(`Tem certeza que deseja apagar a pasta "${lineName}"? Todas as peças serão perdidas.`)) {
             const loadingToast = toast.loading("Apagando pasta...");
@@ -293,21 +296,9 @@ const HomePage = ({ googleAccessToken }) => {
                 </div>
 {selectedCampaignId && (<>
     <CampaignPreviewCard campaign={selectedCampaign} pieceCount={totalPieces} />
-
-    {/* ======================= BOTÃO DE EXPORTAÇÃO ADICIONADO ======================= */}
     <div className="mt-4 flex justify-end">
-        <a
-            href={`${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/export-ppt`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center px-4 py-2 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition-colors"
-        >
-            <FileText className="w-4 h-4 mr-2" />
-            Exportar PPT
-        </a>
+        <a href={`${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/export-ppt`} target="_blank" rel="noopener noreferrer" className="flex items-center px-4 py-2 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition-colors"><FileText className="w-4 h-4 mr-2" />Exportar PPT</a>
     </div>
-    {/* ============================================================================= */}
-
     <div className="mt-8 bg-white p-8 rounded-2xl shadow-lg border border-slate-200">
         <h3 className="text-xl font-bold text-slate-800 mb-4">Linha Criativa / Pasta</h3>
         <form onSubmit={handleCreateCreativeLine} className="flex gap-4 mb-6"><input type="text" value={newCreativeLineName} onChange={(e) => setNewCreativeLineName(e.target.value)} placeholder="Nome da nova pasta..." className="flex-grow p-3 border border-slate-300 rounded-xl focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none" /><button type="submit" className="flex-shrink-0 px-6 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-all"><FolderPlus className="w-5 h-5 mr-2 inline-block" />Criar Pasta</button></form>
