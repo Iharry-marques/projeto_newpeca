@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, Fragment } from "react";
 import { Listbox, Transition } from "@headlessui/react";
-import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, ChevronDown, PlusCircle, FolderPlus, Trash2, XCircle, Pencil } from "lucide-react";
+import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, ChevronDown, PlusCircle, FolderPlus, Trash2, XCircle, Pencil, FileText } from "lucide-react";
 import toast from "react-hot-toast";
 
 import aprobiLogo from "../assets/aprobi-logo.jpg";
@@ -291,46 +291,61 @@ const HomePage = ({ googleAccessToken }) => {
                     <div className="flex items-center justify-between mb-6"><h2 className="text-2xl font-bold text-slate-800">Gestão de Campanhas</h2><button onClick={() => setCampaignModalOpen(true)} className="flex items-center px-6 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-all"><PlusCircle className="w-5 h-5 mr-2" />Nova Campanha</button></div>
                     {isLoadingCampaigns ? <div className="text-slate-500">Carregando campanhas…</div> : <CampaignSelector campaigns={campaigns} selectedCampaignId={selectedCampaignId} onCampaignChange={setSelectedCampaignId} onCreateNew={() => setCampaignModalOpen(true)} />}
                 </div>
-                {selectedCampaignId && (<>
-                    <CampaignPreviewCard campaign={selectedCampaign} pieceCount={totalPieces} />
-                    <div className="mt-8 bg-white p-8 rounded-2xl shadow-lg border border-slate-200">
-                        <h3 className="text-xl font-bold text-slate-800 mb-4">Linha Criativa / Pasta</h3>
-                        <form onSubmit={handleCreateCreativeLine} className="flex gap-4 mb-6"><input type="text" value={newCreativeLineName} onChange={(e) => setNewCreativeLineName(e.target.value)} placeholder="Nome da nova pasta..." className="flex-grow p-3 border border-slate-300 rounded-xl focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none" /><button type="submit" className="flex-shrink-0 px-6 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-all"><FolderPlus className="w-5 h-5 mr-2 inline-block" />Criar Pasta</button></form>
-                        {isLoadingCreativeLines ? <div className="text-slate-500">Carregando pastas…</div> : <div className="space-y-2">
-                            {creativeLines.map((line) => (
-                                <div key={line.id} className={`p-4 rounded-lg border-2 transition-all flex justify-between items-center group ${selectedCreativeLineId === line.id ? "bg-amber-50 border-amber-300" : "bg-slate-50 border-transparent hover:bg-slate-100"}`}>
-                                    <div className="flex-grow cursor-pointer" onClick={() => setSelectedCreativeLineId(line.id === selectedCreativeLineId ? null : line.id)}><span className="font-semibold text-slate-700">{line.name}</span></div>
-                                    <div className="flex items-center gap-2 flex-shrink-0">
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button title="Editar nome" onClick={(e) => { e.stopPropagation(); handleEditCreativeLine(line.id, line.name); }} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-200 rounded-full"><Pencil className="w-4 h-4" /></button>
-                                            <button title="Apagar pasta" onClick={(e) => { e.stopPropagation(); handleDeleteCreativeLine(line.id, line.name); }} className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-200 rounded-full"><Trash2 className="w-4 h-4" /></button>
-                                        </div>
-                                        <span className="text-sm text-slate-500 font-medium bg-slate-200 px-2 py-1 rounded-md">{line.pieces?.length || 0} peças</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>}
-                    </div>
-                    <div className="mt-8">
-                        <FileUpload onFilesAdded={handleFilesAdded} disabled={!selectedCreativeLineId} driveButton={<DriveImportButton campaignId={selectedCampaign?.id} creativeLineId={selectedCreativeLineId} googleAccessToken={googleAccessToken} onImported={handleDriveImport} label="Importar do Google Drive" disabled={!selectedCreativeLineId} />}>
-                            <div className="flex flex-col items-center">
-                                <div className={`mx-auto w-16 h-16 bg-gradient-to-br from-[#ffc801] to-[#ffb700] rounded-full flex items-center justify-center mb-4 shadow-lg ${!selectedCreativeLineId ? "grayscale" : ""}`}><Upload className="h-8 w-8 text-white" /></div>
-                                <h3 className="text-lg font-bold text-slate-800 mb-2">{!selectedCreativeLineId ? "Selecione uma pasta para adicionar peças" : `Adicionar peças em "${creativeLines.find((l) => l.id === selectedCreativeLineId)?.name}"`}</h3><p className="text-slate-500 text-sm">Arraste e solte os arquivos ou use os botões abaixo</p>
-                            </div>
-                        </FileUpload>
-                    </div>
-                    {piecesOfSelectedLine.length > 0 && (
-                        <div className="mt-8">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-2xl font-bold text-slate-800">Peças em "{creativeLines.find((l) => l.id === selectedCreativeLineId)?.name}"</h3>
-                                {!isSelectionMode ? <button onClick={() => setIsSelectionMode(true)} className="flex items-center px-4 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded-lg hover:bg-slate-50 transition-colors"><Trash2 className="w-4 h-4 mr-2" />Remover Peças</button> : <div className="flex items-center gap-4"><button onClick={handleSelectAllPieces} className="flex items-center px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-colors">Selecionar Todas</button><button onClick={handleCancelSelection} className="flex items-center px-4 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded-lg hover:bg-slate-50 transition-colors"><XCircle className="w-4 h-4 mr-2" />Cancelar</button><button onClick={handleRemoveSelectedPieces} disabled={selectedPieces.size === 0} className="flex items-center px-4 py-2 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"><Trash2 className="w-4 h-4 mr-2" />Remover ({selectedPieces.size})</button></div>}
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {piecesOfSelectedLine.map((piece) => (<FileViewer key={piece.id} file={piece} onOpenPopup={setSelectedFile} isSelectionMode={isSelectionMode} isSelected={selectedPieces.has(piece.id)} onSelect={handleTogglePieceSelection} />))}
-                            </div>
+{selectedCampaignId && (<>
+    <CampaignPreviewCard campaign={selectedCampaign} pieceCount={totalPieces} />
+
+    {/* ======================= BOTÃO DE EXPORTAÇÃO ADICIONADO ======================= */}
+    <div className="mt-4 flex justify-end">
+        <a
+            href={`${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/export-ppt`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center px-4 py-2 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition-colors"
+        >
+            <FileText className="w-4 h-4 mr-2" />
+            Exportar PPT
+        </a>
+    </div>
+    {/* ============================================================================= */}
+
+    <div className="mt-8 bg-white p-8 rounded-2xl shadow-lg border border-slate-200">
+        <h3 className="text-xl font-bold text-slate-800 mb-4">Linha Criativa / Pasta</h3>
+        <form onSubmit={handleCreateCreativeLine} className="flex gap-4 mb-6"><input type="text" value={newCreativeLineName} onChange={(e) => setNewCreativeLineName(e.target.value)} placeholder="Nome da nova pasta..." className="flex-grow p-3 border border-slate-300 rounded-xl focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none" /><button type="submit" className="flex-shrink-0 px-6 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-all"><FolderPlus className="w-5 h-5 mr-2 inline-block" />Criar Pasta</button></form>
+        {isLoadingCreativeLines ? <div className="text-slate-500">Carregando pastas…</div> : <div className="space-y-2">
+            {creativeLines.map((line) => (
+                <div key={line.id} className={`p-4 rounded-lg border-2 transition-all flex justify-between items-center group ${selectedCreativeLineId === line.id ? "bg-amber-50 border-amber-300" : "bg-slate-50 border-transparent hover:bg-slate-100"}`}>
+                    <div className="flex-grow cursor-pointer" onClick={() => setSelectedCreativeLineId(line.id === selectedCreativeLineId ? null : line.id)}><span className="font-semibold text-slate-700">{line.name}</span></div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button title="Editar nome" onClick={(e) => { e.stopPropagation(); handleEditCreativeLine(line.id, line.name); }} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-200 rounded-full"><Pencil className="w-4 h-4" /></button>
+                            <button title="Apagar pasta" onClick={(e) => { e.stopPropagation(); handleDeleteCreativeLine(line.id, line.name); }} className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-200 rounded-full"><Trash2 className="w-4 h-4" /></button>
                         </div>
-                    )}
-                </>)}
+                        <span className="text-sm text-slate-500 font-medium bg-slate-200 px-2 py-1 rounded-md">{line.pieces?.length || 0} peças</span>
+                    </div>
+                </div>
+            ))}
+        </div>}
+    </div>
+    <div className="mt-8">
+        <FileUpload onFilesAdded={handleFilesAdded} disabled={!selectedCreativeLineId} driveButton={<DriveImportButton campaignId={selectedCampaign?.id} creativeLineId={selectedCreativeLineId} googleAccessToken={googleAccessToken} onImported={handleDriveImport} label="Importar do Google Drive" disabled={!selectedCreativeLineId} />}>
+            <div className="flex flex-col items-center">
+                <div className={`mx-auto w-16 h-16 bg-gradient-to-br from-[#ffc801] to-[#ffb700] rounded-full flex items-center justify-center mb-4 shadow-lg ${!selectedCreativeLineId ? "grayscale" : ""}`}><Upload className="h-8 w-8 text-white" /></div>
+                <h3 className="text-lg font-bold text-slate-800 mb-2">{!selectedCreativeLineId ? "Selecione uma pasta para adicionar peças" : `Adicionar peças em "${creativeLines.find((l) => l.id === selectedCreativeLineId)?.name}"`}</h3><p className="text-slate-500 text-sm">Arraste e solte os arquivos ou use os botões abaixo</p>
+            </div>
+        </FileUpload>
+    </div>
+    {piecesOfSelectedLine.length > 0 && (
+        <div className="mt-8">
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-2xl font-bold text-slate-800">Peças em "{creativeLines.find((l) => l.id === selectedCreativeLineId)?.name}"</h3>
+                {!isSelectionMode ? <button onClick={() => setIsSelectionMode(true)} className="flex items-center px-4 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded-lg hover:bg-slate-50 transition-colors"><Trash2 className="w-4 h-4 mr-2" />Remover Peças</button> : <div className="flex items-center gap-4"><button onClick={handleSelectAllPieces} className="flex items-center px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-colors">Selecionar Todas</button><button onClick={handleCancelSelection} className="flex items-center px-4 py-2 bg-white border border-slate-300 text-slate-600 font-semibold rounded-lg hover:bg-slate-50 transition-colors"><XCircle className="w-4 h-4 mr-2" />Cancelar</button><button onClick={handleRemoveSelectedPieces} disabled={selectedPieces.size === 0} className="flex items-center px-4 py-2 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"><Trash2 className="w-4 h-4 mr-2" />Remover ({selectedPieces.size})</button></div>}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {piecesOfSelectedLine.map((piece) => (<FileViewer key={piece.id} file={piece} onOpenPopup={setSelectedFile} isSelectionMode={isSelectionMode} isSelected={selectedPieces.has(piece.id)} onSelect={handleTogglePieceSelection} />))}
+            </div>
+        </div>
+    )}
+</>)}
             </main>
             <NewCampaignModal isOpen={isCampaignModalOpen} onClose={() => setCampaignModalOpen(false)} onCampaignCreated={handleCampaignCreated} />
             <FilePopup file={selectedFile} onClose={() => setSelectedFile(null)} />

@@ -9,13 +9,13 @@ const { ensureAuth } = require('../auth');
 const checkOwnership = async (req, res, next) => {
   try {
     const line = await CreativeLine.findByPk(req.params.id, {
-      include: Campaign,
+      include: { model: Campaign, as: 'campaign' },
     });
 
     if (!line) {
       return res.status(404).json({ error: 'Linha Criativa não encontrada.' });
     }
-    if (line.Campaign.createdBy !== req.user.id) {
+    if (!line.campaign || line.campaign.createdBy !== req.user.id) {
       return res.status(403).json({ error: 'Acesso negado.' });
     }
 

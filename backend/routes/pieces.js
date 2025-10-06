@@ -24,9 +24,9 @@ router.delete('/', ensureAuth, async (req, res, next) => {
         attributes: ['id'],
         include: {
           model: Campaign,
-          as: 'Campaign', // Usar o alias padrão do Sequelize
-          attributes: ['createdBy']
-        }
+          as: 'campaign', // Usa o alias definido na associação
+          attributes: ['createdBy'],
+        },
       }
     });
 
@@ -34,7 +34,7 @@ router.delete('/', ensureAuth, async (req, res, next) => {
         return res.status(404).json({ error: 'Nenhuma das peças foi encontrada.' });
     }
 
-    const isOwner = piecesToDelete.every(p => p.creativeLine?.Campaign?.createdBy === req.user.id);
+    const isOwner = piecesToDelete.every(p => p.creativeLine?.campaign?.createdBy === req.user.id);
     if (!isOwner) {
       return res.status(403).json({ error: 'Acesso negado para apagar uma ou mais peças.' });
     }
