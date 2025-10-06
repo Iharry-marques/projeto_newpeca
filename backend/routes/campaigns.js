@@ -1,4 +1,4 @@
-// Em: backend/routes/campaigns.js (VERSÃO FINAL COM CORREÇÃO DE PLACEHOLDER)
+// Em: backend/routes/campaigns.js (VERSÃO FINAL COM DIMENSIONAMENTO INTELIGENTE DE MÍDIA)
 
 const express = require('express');
 const router = express.Router();
@@ -9,6 +9,7 @@ const multer = require('multer');
 const { Op } = require('sequelize');
 const PptxGenJS = require('pptxgenjs');
 const fetch = require('node-fetch');
+const imageSize = require('image-size'); // Importa a biblioteca para ler dimensões
 
 const { Campaign, CreativeLine, Piece, Client } = require('../models');
 const { ensureAuth } = require('../auth');
@@ -24,23 +25,30 @@ function safeFilename(name) {
   return String(name || '').replace(/[^\w.\-() ]/g, '_').slice(0, 200);
 }
 
-async function getFileAsBase64(piece, accessToken) {
+// Função agora retorna um objeto com o buffer e o mimetype
+async function getFileData(piece, accessToken) {
   try {
+    let fileBuffer;
     if (piece.filename) {
       const filePath = path.join(uploadDir, piece.filename);
       if (fs.existsSync(filePath)) {
-        const fileBuffer = await fs.promises.readFile(filePath);
-        return `data:${piece.mimetype};base64,${fileBuffer.toString('base64')}`;
+        fileBuffer = await fs.promises.readFile(filePath);
       }
-    }
-    if (piece.driveId && accessToken) {
+    } else if (piece.driveId && accessToken) {
       const driveUrl = `https://www.googleapis.com/drive/v3/files/${piece.driveId}?alt=media`;
       const response = await fetch(driveUrl, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
       if (!response.ok) throw new Error(`Falha ao buscar do Drive (${response.status}): ${response.statusText}`);
-      const fileBuffer = await response.buffer();
-      return `data:${piece.mimetype};base64,${fileBuffer.toString('base64')}`;
+      fileBuffer = await response.buffer();
+    }
+
+    if (fileBuffer) {
+      return {
+        buffer: fileBuffer,
+        base64: `data:${piece.mimetype};base64,${fileBuffer.toString('base64')}`,
+        mimetype: piece.mimetype
+      };
     }
     return null;
   } catch (error) {
@@ -161,9 +169,8 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
         return res.status(403).json({ error: 'Autenticação com Google Drive não encontrada. Por favor, reconecte.' });
     }
 
-    const campaignId = req.params.id;
     const campaign = await Campaign.findOne({
-      where: { id: campaignId, createdBy: req.user.id },
+      where: { id: req.params.id, createdBy: req.user.id },
       include: [{
         model: CreativeLine, as: 'creativeLines', order: [['createdAt', 'ASC']],
         include: [{ model: Piece, as: 'pieces', order: [['order', 'ASC'], ['createdAt', 'ASC']] }],
@@ -179,39 +186,23 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
     const TEXT_DARK = '0F172A';
     const BG_LIGHT = 'F8FAFC';
 
-    // MASTER SLIDE PARA TÍTULOS DE SEÇÃO
+    // MASTER SLIDES
     pptx.defineSlideMaster({
       title: 'MASTER_TITLE',
       background: { color: BG_LIGHT },
       objects: [
         { 'rect': { x: 0, y: 3.2, w: '100%', h: 1, fill: { color: SUNO_YELLOW } } },
-        { 'placeholder': {
-            options: { name: 'campaignTitle', type: 'title', x: 0.5, y: 2.2, w: 9.0, h: 1, fontFace: 'Montserrat', fontSize: 32, color: TEXT_DARK, bold: true },
-            text: ''
-          }
-        },
-        { 'placeholder': {
-            options: { name: 'lineTitle', type: 'body', x: 0.5, y: 3.4, w: 9.0, h: 0.6, fontFace: 'Montserrat', fontSize: 24, color: TEXT_DARK },
-            text: ''
-          }
-        },
+        { 'placeholder': { options: { name: 'campaignTitle', type: 'title', x: 0.5, y: 2.2, w: 9.0, h: 1, fontFace: 'Montserrat', fontSize: 32, color: TEXT_DARK, bold: true }, text: '' }},
+        { 'placeholder': { options: { name: 'lineTitle', type: 'body', x: 0.5, y: 3.4, w: 9.0, h: 0.6, fontFace: 'Montserrat', fontSize: 24, color: TEXT_DARK }, text: '' }},
       ],
     });
 
-    // MASTER SLIDE PARA CONTEÚDO (PEÇAS)
     pptx.defineSlideMaster({
         title: 'MASTER_CONTENT_SPLIT',
         background: { color: BG_LIGHT },
         objects: [
-            { 'placeholder': {
-                options: { name: 'info', type: 'body', x: 0.5, y: 0.5, w: 2.5, h: 4.5, align: 'center', valign: 'middle', fontFace: 'Montserrat', fontSize: 14, color: TEXT_DARK },
-                text: ''
-            }},
-            // AQUI ESTÁ A CORREÇÃO: type: 'pic'
-            { 'placeholder': {
-                options: { name: 'media', type: 'pic', x: 3.5, y: 0.5, w: 6.0, h: 4.5 },
-                text: '' // O texto padrão é ignorado para o tipo 'pic'
-            }}
+            { 'placeholder': { options: { name: 'info', type: 'body', x: 0.5, y: 0.5, w: 2.5, h: 4.5, align: 'center', valign: 'middle', fontFace: 'Montserrat', fontSize: 14, color: TEXT_DARK }, text: '' }},
+            { 'placeholder': { options: { name: 'media', type: 'pic', x: 3.5, y: 0.5, w: 6.0, h: 4.5 }, text: '' }}
         ]
     });
     
@@ -232,7 +223,6 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
 
         for (const piece of line.pieces) {
           let slidePeca = pptx.addSlide({ masterName: 'MASTER_CONTENT_SPLIT' });
-
           slidePeca.addText([
             { text: 'Nome da Peça:', options: { fontFace: 'Montserrat', bold: true, breakLine: true } },
             { text: piece.originalName, options: { fontFace: 'Montserrat', fontSize: 12 } }
@@ -242,22 +232,41 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
           const isVideo = (piece.mimetype || '').startsWith('video/');
           
           if (isImage || isVideo) {
-            const fileBase64 = await getFileAsBase64(piece, userAccessToken);
-            if (fileBase64) {
+            const fileData = await getFileData(piece, userAccessToken);
+            if (fileData) {
+              const area = { w: 6.0, h: 4.5 };
+              let mediaDims = { w: area.w, h: area.h }; // Default to area size
+
+              // Calcula as dimensões corretas mantendo a proporção
               if (isImage) {
-                slidePeca.addImage({
-                  data: fileBase64,
-                  placeholder: 'media',
-                  sizing: { type: 'contain', w: 6.0, h: 4.5 }
-                });
+                try {
+                  const dims = imageSize(fileData.buffer);
+                  const areaRatio = area.w / area.h;
+                  const mediaRatio = dims.width / dims.height;
+
+                  if (mediaRatio > areaRatio) { // Mídia mais larga que a área
+                    mediaDims.h = area.w / mediaRatio;
+                  } else { // Mídia mais alta ou na mesma proporção
+                    mediaDims.w = area.h * mediaRatio;
+                  }
+                } catch (e) {
+                  console.error(`Não foi possível ler as dimensões de ${piece.originalName}, usando tamanho padrão.`);
+                }
+              }
+              // Para vídeos, o pptxgenjs faz um bom trabalho com 'contain', então não precisamos do cálculo manual.
+
+              const mediaOptions = {
+                data: fileData.base64,
+                x: 3.5 + (area.w - mediaDims.w) / 2, // Centraliza horizontalmente
+                y: 0.5 + (area.h - mediaDims.h) / 2, // Centraliza verticalmente
+                w: mediaDims.w,
+                h: mediaDims.h,
+              };
+              
+              if (isImage) {
+                slidePeca.addImage(mediaOptions);
               } else if (isVideo) {
-                // Usamos as mesmas coordenadas do placeholder 'media' para garantir o alinhamento
-                slidePeca.addMedia({
-                  type: 'video',
-                  data: fileBase64,
-                  x: 3.5, y: 0.5, w: 6.0, h: 4.5,
-                  sizing: { type: 'contain', w: 6.0, h: 4.5 }
-                });
+                slidePeca.addMedia({ ...mediaOptions, type: 'video' });
               }
             } else {
               slidePeca.addText(`[Falha ao carregar: "${piece.originalName}"]`, { placeholder: 'media', align: 'center', color: 'C00000' });
