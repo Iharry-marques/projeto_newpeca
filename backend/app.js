@@ -7,6 +7,9 @@ const cors = require("cors");
 const session = require("express-session");
 const SQLiteStore = require("connect-sqlite3")(session);
 const bodyParser = require("body-parser");
+const creativeLineRoutes = require('./routes/creativeLines');
+const pieceRoutes = require('./routes/pieces');
+
 
 // Importações dos Módulos do Projeto
 const { googleAuthRouter, ensureAuth, meRouter, passport } = require("./auth");
@@ -16,6 +19,7 @@ const clientAuthRoutes = require("./routes/clientAuth"); // Importa o objeto { r
 const approvalRoutes = require("./routes/approval");
 const { sequelize } = require("./models");
 const errorHandler = require("./middleware/errorHandler");
+
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -66,6 +70,9 @@ app.use("/me", meRouter);
 
 // Precisamos usar a propriedade .router do objeto importado
 app.use("/client-auth", clientAuthRoutes.router);
+app.use('/creative-lines', creativeLineRoutes);
+app.use('/pieces', pieceRoutes);
+
 
 // Rotas Protegidas
 app.use("/campaigns", ensureAuth, campaignRoutes);
