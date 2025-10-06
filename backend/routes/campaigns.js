@@ -10,6 +10,8 @@ const puppeteer = require('puppeteer');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { Op } = require('sequelize');
+const PptxGenJS = require('pptxgenjs');
+
 
 const { Campaign, CreativeLine, Piece, Client, CampaignClient } = require('../models');
 // CORREÇÃO: A função de autenticação é exportada como 'ensureAuth' e não 'ensureAuthenticated'
@@ -344,5 +346,104 @@ router.get('/files/:filename', (req, res) => {
   res.sendFile(filePath);
 });
 
+/* ================== ROTA DE EXPORTAÇÃO DE PPT ================== */
+router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
+  try {
+    const campaignId = req.params.id;
+    const campaign = await Campaign.findOne({
+      where: { id: campaignId, createdBy: req.user.id },
+      include: [{
+        model: CreativeLine,
+        as: 'creativeLines',
+        order: [['createdAt', 'ASC']], // Ordena as linhas criativas
+        include: [{
+          model: Piece,
+          as: 'pieces',
+          order: [['order', 'ASC'], ['createdAt', 'ASC']], // Ordena as peças
+        }],
+      }],
+    });
+
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada' });
+    }
+
+    // 1. Inicia a apresentação
+    let pptx = new PptxGenJS();
+    pptx.layout = 'LAYOUT_16x9'; // Layout widescreen padrão
+
+    const GREEN_BG = '00B050';
+    const WHITE_TEXT = 'FFFFFF';
+    const COVER_IMAGE_PATH = path.join(__dirname, '../assets/suno-cover.png');
+
+    // 2. SLIDE 1: Capa Inicial
+    let slideCapa = pptx.addSlide();
+    slideCapa.addImage({ path: COVER_IMAGE_PATH, w: '100%', h: '100%' });
+
+    // 3. SLIDE 2: Título da Campanha
+    let slideTituloCampanha = pptx.addSlide();
+    slideTituloCampanha.background = { color: GREEN_BG };
+    slideTituloCampanha.addText(campaign.name, { 
+        align: 'center', y: '40%', w: '100%', 
+        color: WHITE_TEXT, fontSize: 40, bold: true 
+    });
+
+    // 4. Itera sobre cada Linha Criativa e suas Peças
+    for (const line of (campaign.creativeLines || [])) {
+      // SLIDE TÍTULO DA LINHA CRIATIVA
+      let slideTituloLinha = pptx.addSlide();
+      slideTituloLinha.background = { color: GREEN_BG };
+      slideTituloLinha.addText(line.name, { 
+          align: 'center', y: '40%', w: '100%', 
+          color: WHITE_TEXT, fontSize: 32 
+      });
+
+      // SLIDES DE CONTEÚDO (PEÇAS)
+      for (const piece of (line.pieces || [])) {
+        let slidePeca = pptx.addSlide();
+        const isImage = (piece.mimetype || '').startsWith('image/');
+
+        // Define a URL da imagem, seja do Drive ou de upload local
+        const imageUrl = piece.driveId 
+          ? `https://drive.google.com/uc?export=view&id=${piece.driveId}` 
+          : (piece.filename ? `${process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 3000}`}/campaigns/files/${piece.filename}` : null);
+
+        if (isImage && imageUrl) {
+          // Adiciona a imagem centralizada
+          slidePeca.addImage({ path: imageUrl, x: '5%', y: '15%', w: '90%', h: '70%' });
+          
+          // Adiciona o "molde verde" com o nome da peça
+          slidePeca.addText(piece.originalName, {
+            x: '5%', y: '10%', w: '90%', h: 0.5,
+            align: 'center', fill: { color: GREEN_BG }, color: WHITE_TEXT,
+            fontSize: 14,
+          });
+        } else {
+          slidePeca.addText(`[Pré-visualização não disponível para "${piece.originalName}"]`, { 
+              x: 0, y: '45%', w: '100%', align: 'center', color: '6c757d' 
+          });
+        }
+      }
+    }
+
+    // 5. SLIDE FINAL: Repete a capa
+    let slideFinal = pptx.addSlide();
+    slideFinal.addImage({ path: COVER_IMAGE_PATH, w: '100%', h: '100%' });
+
+
+    // 6. Gera o arquivo e envia para o usuário
+    const filename = `${safeFilename(campaign.name)}.pptx`;
+    res.writeHead(200, {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'Content-Disposition': `attachment; filename=${filename}`,
+    });
+    const data = await pptx.stream();
+    res.end(data);
+
+  } catch (error) {
+    console.error("Erro ao gerar PPT:", error);
+    next(error);
+  }
+});
 
 module.exports = router;
