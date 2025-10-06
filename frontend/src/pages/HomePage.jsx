@@ -1,12 +1,14 @@
+// Em: frontend/src/pages/HomePage.jsx  (VERSÃO REFATORADA – usando API)
+
 import React, { useState, useCallback, useEffect, Fragment } from "react";
 import { Listbox, Transition } from "@headlessui/react";
 import {
   Upload,
   Check,
   FileText,
-  Image,
-  Video,
-  File,
+  Image as ImageIcon,
+  Video as VideoIcon,
+  File as FileIcon,
   X,
   ChevronDown,
   PlusCircle,
@@ -21,8 +23,7 @@ import CampaignSelector from "../components/CampaignSelector";
 import CampaignPreviewCard from "../components/CampaignPreviewCard";
 import DriveImportButton from "../components/DriveImportButton";
 
-// -- COMPONENTES INTERNOS --
-
+// =================== DADOS AUXILIARES ===================
 const clients = [
   { name: "AMERICANAS" },
   { name: "ARAMIS" },
@@ -42,12 +43,13 @@ const clients = [
   { name: "VIVO" },
 ].sort((a, b) => a.name.localeCompare(b.name));
 
+// =================== COMPONENTES INTERNOS ===================
 const FileTypeIcon = ({ fileType }) => {
-  if (fileType.startsWith("image/"))
-    return <Image className="w-5 h-5 text-blue-500" />;
-  if (fileType.startsWith("video/"))
-    return <Video className="w-5 h-5 text-purple-500" />;
-  return <File className="w-5 h-5 text-slate-500" />;
+  if ((fileType || "").startsWith("image/"))
+    return <ImageIcon className="w-5 h-5 text-blue-500" />;
+  if ((fileType || "").startsWith("video/"))
+    return <VideoIcon className="w-5 h-5 text-purple-500" />;
+  return <FileIcon className="w-5 h-5 text-slate-500" />;
 };
 
 const FileViewer = ({
@@ -57,32 +59,41 @@ const FileViewer = ({
   isSelected,
   onSelect,
 }) => {
+  // compat: suporte a objetos vindos do backend (mimetype/filename) e locais (type/url)
+  const mime = file.type || file.mimetype || "";
+  const name = file.name || file.originalName || file.filename || "arquivo";
+  const url =
+    file.url ||
+    (file.filename
+      ? `${import.meta.env.VITE_BACKEND_URL}/campaigns/files/${file.filename}`
+      : null);
+
   const handleCardClick = () => {
     if (isSelectionMode) {
       onSelect(file.id);
     } else {
-      onOpenPopup(file);
+      onOpenPopup({ ...file, _resolved: { mime, name, url } });
     }
   };
 
   const renderPreview = () => {
-    if (file.type.startsWith("image/"))
+    if (mime.startsWith("image/") && url)
       return (
         <img
-          src={file.url}
-          alt={file.name}
+          src={url}
+          alt={name}
           className="w-full h-48 object-cover rounded-xl"
         />
       );
-    if (file.type.startsWith("video/"))
+    if (mime.startsWith("video/"))
       return (
         <div className="w-full h-48 bg-purple-100 rounded-xl flex items-center justify-center">
-          <Video className="w-16 h-16 text-purple-400" />
+          <VideoIcon className="w-16 h-16 text-purple-400" />
         </div>
       );
     return (
       <div className="w-full h-48 bg-slate-100 rounded-xl flex items-center justify-center">
-        <File className="w-16 h-16 text-slate-400" />
+        <FileIcon className="w-16 h-16 text-slate-400" />
       </div>
     );
   };
@@ -103,9 +114,9 @@ const FileViewer = ({
       >
         {renderPreview()}
         <div className="mt-4 flex items-center">
-          <FileTypeIcon fileType={file.type} />
+          <FileTypeIcon fileType={mime} />
           <span className="ml-3 text-sm font-semibold text-slate-700 truncate">
-            {file.name}
+            {name}
           </span>
         </div>
       </div>
@@ -142,7 +153,7 @@ const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
       );
 
       if (!response.ok) {
-        const errData = await response.json();
+        const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || "Falha ao criar campanha.");
       }
 
@@ -285,21 +296,30 @@ const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
 
 const FilePopup = ({ file, onClose }) => {
   if (!file) return null;
+  const mime = file._resolved?.mime || file.type || file.mimetype || "";
+  const name =
+    file._resolved?.name || file.name || file.originalName || file.filename;
+  const url =
+    file._resolved?.url ||
+    file.url ||
+    (file.filename
+      ? `${import.meta.env.VITE_BACKEND_URL}/campaigns/files/${file.filename}`
+      : null);
 
   const renderContent = () => {
-    if (file.type.startsWith("image/")) {
+    if (mime.startsWith("image/") && url) {
       return (
         <img
-          src={file.url}
-          alt={file.name}
+          src={url}
+          alt={name}
           className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg"
         />
       );
     }
-    if (file.type.startsWith("video/")) {
+    if (mime.startsWith("video/") && url) {
       return (
         <video
-          src={file.url}
+          src={url}
           controls
           autoPlay
           className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg"
@@ -308,8 +328,8 @@ const FilePopup = ({ file, onClose }) => {
     }
     return (
       <div className="w-96 h-96 bg-slate-100 rounded-xl flex flex-col items-center justify-center text-center p-4">
-        <File className="w-24 h-24 text-slate-400 mb-4" />
-        <span className="text-slate-700 font-semibold">{file.name}</span>
+        <FileIcon className="w-24 h-24 text-slate-400 mb-4" />
+        <span className="text-slate-700 font-semibold">{name}</span>
         <p className="text-slate-500 text-sm mt-2">
           Pré-visualização não disponível para este tipo de arquivo.
         </p>
@@ -327,9 +347,7 @@ const FilePopup = ({ file, onClose }) => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-slate-200">
-          <h3 className="text-lg font-bold text-slate-800 truncate">
-            {file.name}
-          </h3>
+          <h3 className="text-lg font-bold text-slate-800 truncate">{name}</h3>
           <button
             onClick={onClose}
             className="p-2 hover:bg-slate-100 rounded-full transition-colors"
@@ -411,147 +429,176 @@ const FileUpload = ({ onFilesAdded, disabled, children, driveButton }) => {
   );
 };
 
-// --- COMPONENTE PRINCIPAL ---
+// =================== COMPONENTE PRINCIPAL (API) ===================
 const HomePage = ({ googleAccessToken }) => {
-  // Persistência localStorage
-  const [campaigns, setCampaigns] = useState(() => {
-    const saved = localStorage.getItem("aprobi-campaigns");
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [creativeLines, setCreativeLines] = useState(() => {
-    const saved = localStorage.getItem("aprobi-creativeLines");
-    return saved ? JSON.parse(saved) : [];
-  });
+  // Estados (sem localStorage)
+  const [campaigns, setCampaigns] = useState([]);
+  const [creativeLines, setCreativeLines] = useState([]);
 
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
-  const [isCampaignModalOpen, setCampaignModalOpen] = useState(false);
   const [selectedCreativeLineId, setSelectedCreativeLineId] = useState(null);
+
+  // UI
+  const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(true);
+  const [isLoadingCreativeLines, setIsLoadingCreativeLines] = useState(false);
+  const [isCampaignModalOpen, setCampaignModalOpen] = useState(false);
   const [newCreativeLineName, setNewCreativeLineName] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const [selectedPieces, setSelectedPieces] = useState(new Set());
 
+  // -------- Fetch: campanhas na montagem --------
   useEffect(() => {
-    localStorage.setItem("aprobi-campaigns", JSON.stringify(campaigns));
-  }, [campaigns]);
+    const fetchCampaigns = async () => {
+      try {
+        setIsLoadingCampaigns(true);
+        const response = await fetch(
+          `${import.meta.env.VITE_BACKEND_URL}/campaigns`,
+          { credentials: "include" }
+        );
+        if (!response.ok) throw new Error("Falha ao buscar campanhas.");
+        const data = await response.json();
+        setCampaigns(data);
+      } catch (error) {
+        console.error(error);
+        alert(error.message);
+      } finally {
+        setIsLoadingCampaigns(false);
+      }
+    };
+    fetchCampaigns();
+  }, []);
 
+  // -------- Fetch: linhas criativas ao selecionar campanha --------
   useEffect(() => {
-    localStorage.setItem("aprobi-creativeLines", JSON.stringify(creativeLines));
-  }, [creativeLines]);
-
-  useEffect(() => {
-    if (selectedCampaignId) {
+    if (!selectedCampaignId) {
+      setCreativeLines([]);
       setSelectedCreativeLineId(null);
+      return;
     }
+
+    const fetchCreativeLines = async () => {
+      try {
+        setIsLoadingCreativeLines(true);
+        const response = await fetch(
+          `${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/creative-lines`,
+          { credentials: "include" }
+        );
+        if (!response.ok) throw new Error("Falha ao buscar linhas criativas.");
+        const data = await response.json();
+        setCreativeLines(data || []);
+      } catch (error) {
+        console.error(error);
+        alert(error.message);
+      } finally {
+        setIsLoadingCreativeLines(false);
+      }
+    };
+
+    fetchCreativeLines();
+    setSelectedCreativeLineId(null);
   }, [selectedCampaignId]);
 
-  const handleCreateCreativeLine = (e) => {
+  // -------- Manipuladores --------
+  const handleCampaignCreated = (newCampaign) => {
+    setCampaigns((prev) => [newCampaign, ...prev]);
+    setSelectedCampaignId(newCampaign.id);
+    setCampaignModalOpen(false);
+  };
+
+  const handleCreateCreativeLine = async (e) => {
     e.preventDefault();
     if (!newCreativeLineName.trim() || !selectedCampaignId) return;
-    const newLine = {
-      id: Date.now(),
-      campaignId: selectedCampaignId,
-      name: newCreativeLineName,
-      pieces: [],
-    };
-    setCreativeLines((prev) => [...prev, newLine]);
-    setNewCreativeLineName("");
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/creative-lines`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ name: newCreativeLineName }),
+        }
+      );
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "Falha ao criar linha criativa.");
+      }
+
+      const newCreativeLine = await response.json();
+      // garante shape com pieces:
+      setCreativeLines((prev) => [...prev, { ...newCreativeLine, pieces: [] }]);
+      setSelectedCreativeLineId(newCreativeLine.id);
+      setNewCreativeLineName("");
+    } catch (error) {
+      console.error(error);
+      alert(error.message);
+    }
   };
 
+  // Drag & drop ainda não integrado na API (upload vinculado à linha).
   const handleFilesAdded = useCallback(
-    (newFiles) => {
-      if (!selectedCreativeLineId) {
-        alert(
-          "Por favor, selecione ou crie uma 'Linha Criativa / Pasta' antes de adicionar peças."
-        );
-        return;
-      }
-      const processedFiles = newFiles.map((file) => ({
-        id: Date.now() + Math.random(),
-        name: file.name,
-        type: file.type,
-        url: URL.createObjectURL(file),
-      }));
-      setCreativeLines((prevLines) =>
-        prevLines.map((line) =>
-          line.id === selectedCreativeLineId
-            ? { ...line, pieces: [...line.pieces, ...processedFiles] }
-            : line
-        )
+    (_newFiles) => {
+      alert(
+        "Upload por arrastar/selecionar ainda não está integrado à API (vincular à Linha Criativa). Use “Importar do Google Drive” por enquanto."
       );
     },
-    [selectedCreativeLineId]
+    []
   );
 
-  const handleTogglePieceSelection = (pieceId) => {
-    setSelectedPieces((prevSelected) => {
-      const newSelected = new Set(prevSelected);
-      if (newSelected.has(pieceId)) {
-        newSelected.delete(pieceId);
-      } else {
-        newSelected.add(pieceId);
+  // Após import do Drive (backend já salvou), apenas revalida listagem
+  const handleDriveImport = () => {
+    if (!selectedCampaignId) return;
+
+    const refetch = async () => {
+      try {
+        setIsLoadingCreativeLines(true);
+        const response = await fetch(
+          `${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/creative-lines`,
+          { credentials: "include" }
+        );
+        if (!response.ok) throw new Error("Falha ao buscar linhas criativas.");
+        const data = await response.json();
+        setCreativeLines(data || []);
+      } catch (error) {
+        console.error(error);
+        alert(error.message);
+      } finally {
+        setIsLoadingCreativeLines(false);
       }
-      return newSelected;
-    });
+    };
+    refetch();
   };
 
+  // Seleção/remoção (placeholder até termos endpoint de delete)
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedPieces, setSelectedPieces] = useState(new Set());
+  const handleTogglePieceSelection = (pieceId) => {
+    setSelectedPieces((prev) => {
+      const next = new Set(prev);
+      next.has(pieceId) ? next.delete(pieceId) : next.add(pieceId);
+      return next;
+    });
+  };
   const handleRemoveSelectedPieces = () => {
-    setCreativeLines((prevLines) =>
-      prevLines.map((line) => {
-        if (line.id === selectedCreativeLineId) {
-          return {
-            ...line,
-            pieces: line.pieces.filter(
-              (piece) => !selectedPieces.has(piece.id)
-            ),
-          };
-        }
-        return line;
-      })
-    );
+    alert("Remoção de peças ainda não implementada na API.");
     setIsSelectionMode(false);
     setSelectedPieces(new Set());
   };
-
   const handleCancelSelection = () => {
     setIsSelectionMode(false);
     setSelectedPieces(new Set());
   };
 
-  const handleCampaignCreated = (newCampaign) => {
-    setCampaigns((prev) => [newCampaign, ...prev]);
-    setSelectedCampaignId(newCampaign.id);
-  };
-
-  const handleDriveImport = (pieces) => {
-    if (!selectedCreativeLineId) {
-      alert(
-        "Por favor, selecione ou crie uma 'Linha Criativa / Pasta' antes de adicionar peças."
-      );
-      return;
-    }
-
-    setCreativeLines((prevLines) =>
-      prevLines.map((line) =>
-        line.id === selectedCreativeLineId
-          ? { ...line, pieces: [...line.pieces, ...pieces] }
-          : line
-      )
-    );
-  };
-
+  // -------- Derivados --------
   const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId);
-  const currentCreativeLines = creativeLines.filter(
-    (line) => line.campaignId === selectedCampaignId
-  );
   const piecesOfSelectedLine =
-    currentCreativeLines.find((line) => line.id === selectedCreativeLineId)
-      ?.pieces || [];
-  const totalPieces = currentCreativeLines.reduce(
-    (acc, line) => acc + line.pieces.length,
+    creativeLines.find((l) => l.id === selectedCreativeLineId)?.pieces || [];
+  const totalPieces = creativeLines.reduce(
+    (acc, l) => acc + (l.pieces?.length || 0),
     0
   );
 
+  // =================== JSX ===================
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <header className="bg-white shadow-md border-b border-slate-200">
@@ -582,12 +629,17 @@ const HomePage = ({ googleAccessToken }) => {
               Nova Campanha
             </button>
           </div>
-          <CampaignSelector
-            campaigns={campaigns}
-            selectedCampaignId={selectedCampaignId}
-            onCampaignChange={setSelectedCampaignId}
-            onCreateNew={() => setCampaignModalOpen(true)}
-          />
+
+          {isLoadingCampaigns ? (
+            <div className="text-slate-500">Carregando campanhas…</div>
+          ) : (
+            <CampaignSelector
+              campaigns={campaigns}
+              selectedCampaignId={selectedCampaignId}
+              onCampaignChange={setSelectedCampaignId}
+              onCreateNew={() => setCampaignModalOpen(true)}
+            />
+          )}
         </div>
 
         {selectedCampaignId && (
@@ -601,6 +653,7 @@ const HomePage = ({ googleAccessToken }) => {
               <h3 className="text-xl font-bold text-slate-800 mb-4">
                 Linha Criativa / Pasta
               </h3>
+
               <form
                 onSubmit={handleCreateCreativeLine}
                 className="flex gap-4 mb-6"
@@ -620,30 +673,35 @@ const HomePage = ({ googleAccessToken }) => {
                   Criar Pasta
                 </button>
               </form>
-              <div className="space-y-2">
-                {currentCreativeLines.map((line) => (
-                  <div
-                    key={line.id}
-                    onClick={() =>
-                      setSelectedCreativeLineId(
-                        line.id === selectedCreativeLineId ? null : line.id
-                      )
-                    }
-                    className={`p-4 rounded-lg cursor-pointer border-2 transition-all flex justify-between items-center ${
-                      selectedCreativeLineId === line.id
-                        ? "bg-amber-50 border-amber-300"
-                        : "bg-slate-50 border-transparent hover:bg-slate-100"
-                    }`}
-                  >
-                    <span className="font-semibold text-slate-700">
-                      {line.name}
-                    </span>
-                    <span className="text-sm text-slate-500 font-medium bg-slate-200 px-2 py-1 rounded-md">
-                      {line.pieces.length} peças
-                    </span>
-                  </div>
-                ))}
-              </div>
+
+              {isLoadingCreativeLines ? (
+                <div className="text-slate-500">Carregando pastas…</div>
+              ) : (
+                <div className="space-y-2">
+                  {creativeLines.map((line) => (
+                    <div
+                      key={line.id}
+                      onClick={() =>
+                        setSelectedCreativeLineId(
+                          line.id === selectedCreativeLineId ? null : line.id
+                        )
+                      }
+                      className={`p-4 rounded-lg cursor-pointer border-2 transition-all flex justify-between items-center ${
+                        selectedCreativeLineId === line.id
+                          ? "bg-amber-50 border-amber-300"
+                          : "bg-slate-50 border-transparent hover:bg-slate-100"
+                      }`}
+                    >
+                      <span className="font-semibold text-slate-700">
+                        {line.name}
+                      </span>
+                      <span className="text-sm text-slate-500 font-medium bg-slate-200 px-2 py-1 rounded-md">
+                        {line.pieces?.length || 0} peças
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="mt-8">
@@ -653,10 +711,11 @@ const HomePage = ({ googleAccessToken }) => {
                 driveButton={
                   <DriveImportButton
                     campaignId={selectedCampaign?.id}
-                    creativeLineId={selectedCreativeLineId} // <-- ADICIONE ESTA LINHA
+                    creativeLineId={selectedCreativeLineId}
                     googleAccessToken={googleAccessToken}
                     onImported={handleDriveImport}
                     label="Importar do Google Drive"
+                    disabled={!selectedCreativeLineId}
                   />
                 }
               >
@@ -672,7 +731,7 @@ const HomePage = ({ googleAccessToken }) => {
                     {!selectedCreativeLineId
                       ? "Selecione uma pasta para adicionar peças"
                       : `Adicionar peças em "${
-                          currentCreativeLines.find(
+                          creativeLines.find(
                             (l) => l.id === selectedCreativeLineId
                           )?.name
                         }"`}
@@ -690,7 +749,7 @@ const HomePage = ({ googleAccessToken }) => {
                   <h3 className="text-2xl font-bold text-slate-800">
                     Peças em "
                     {
-                      currentCreativeLines.find(
+                      creativeLines.find(
                         (l) => l.id === selectedCreativeLineId
                       )?.name
                     }

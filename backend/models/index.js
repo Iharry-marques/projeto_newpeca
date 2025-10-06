@@ -15,35 +15,69 @@ const modelDefiners = [
   require('./Campaign'),
   require('./Piece'),
   require('./CampaignClient'),
-  require('./CreativeLine'), // Adicionado
+  require('./CreativeLine'),
 ];
 
-for (const modelDefiner of modelDefiners) {
-  modelDefiner(sequelize);
+// Inicializa os models
+for (const def of modelDefiners) {
+  def(sequelize);
 }
 
-// Definir associações
+// Desestrutura para facilitar
 const { User, Client, Campaign, Piece, CampaignClient, CreativeLine } = sequelize.models;
 
-User.hasMany(Campaign, { foreignKey: 'createdBy' });
-Campaign.belongsTo(User, { foreignKey: 'createdBy' });
+/* =========================== ASSOCIAÇÕES =========================== */
 
-// Campanha tem muitas Linhas Criativas
-Campaign.hasMany(CreativeLine);
-CreativeLine.belongsTo(Campaign);
+// User ⇄ Campaign (criador)
+User.hasMany(Campaign, { foreignKey: 'createdBy', as: 'campaigns' });
+Campaign.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
 
-// Linha Criativa tem muitas Peças
-CreativeLine.hasMany(Piece);
-Piece.belongsTo(CreativeLine);
+// Campaign ⇄ CreativeLine
+Campaign.hasMany(CreativeLine, {
+  as: 'creativeLines',
+  foreignKey: 'CampaignId',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE',
+});
+CreativeLine.belongsTo(Campaign, {
+  as: 'campaign',
+  foreignKey: 'CampaignId',
+});
 
-// Relação Cliente-Campanha (Muitos para Muitos)
-Campaign.belongsToMany(Client, { through: CampaignClient, foreignKey: 'campaignId', as: 'authorizedClients' });
-Client.belongsToMany(Campaign, { through: CampaignClient, foreignKey: 'clientId', as: 'assignedCampaigns' });
+// CreativeLine ⇄ Piece
+CreativeLine.hasMany(Piece, {
+  as: 'pieces',
+  foreignKey: 'CreativeLineId',
+  onDelete: 'SET NULL',
+  onUpdate: 'CASCADE',
+});
+Piece.belongsTo(CreativeLine, {
+  as: 'creativeLine',
+  foreignKey: 'CreativeLineId',
+});
+
+// (Recomendado) Campaign ⇄ Piece (para includes diretos a partir de Campanha)
+Campaign.hasMany(Piece, { foreignKey: 'CampaignId' });
+Piece.belongsTo(Campaign, { foreignKey: 'CampaignId' });
+
+// Campaign ⇄ Client (N:N) via CampaignClient
+Campaign.belongsToMany(Client, {
+  through: CampaignClient,
+  foreignKey: 'campaignId',
+  as: 'authorizedClients',
+});
+Client.belongsToMany(Campaign, {
+  through: CampaignClient,
+  foreignKey: 'clientId',
+  as: 'assignedCampaigns',
+});
 
 CampaignClient.belongsTo(Campaign, { foreignKey: 'campaignId' });
 CampaignClient.belongsTo(Client, { foreignKey: 'clientId' });
 
+// Piece ⇄ Client (revisor)
 Piece.belongsTo(Client, { foreignKey: 'reviewedBy', as: 'reviewer' });
 Client.hasMany(Piece, { foreignKey: 'reviewedBy', as: 'reviewedPieces' });
 
-module.exports = { sequelize, ...sequelize.models };
+/* ========================= EXPORTAÇÃO ========================= */
+module.exports = { sequelize, Sequelize, ...sequelize.models };

@@ -1,544 +1,348 @@
-// backend/routes/campaigns.js
-// Rotas de campanhas (Suno/Cliente) + upload + export PDF
+// Em: backend/routes/campaigns.js (VERSÃO FINAL E COMPLETA)
 
-const { Readable } = require("node:stream");
-const { pipeline } = require("node:stream/promises");
-const express = require("express");
+const express = require('express');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const multer = require('multer');
+const puppeteer = require('puppeteer');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
+const { Op } = require('sequelize');
 
-const path = require("path");
-const fs = require("fs"); // Mantemos o 'fs' para createWriteStream e existsSync
+const { Campaign, CreativeLine, Piece, Client, CampaignClient } = require('../models');
+// CORREÇÃO: A função de autenticação é exportada como 'ensureAuth' e não 'ensureAuthenticated'
+const { ensureAuth } = require('../auth');
 
-const multer = require("multer"); // npm i multer
-const puppeteer = require("puppeteer"); // npm i puppeteer
-
-const { Campaign, Piece, Client, CampaignClient, User } = require("../models");
-
-// ---------- Auth guard ----------
-function ensureAuthenticated(req, res, next) {
-  // Passport preenche req.isAuthenticated/req.user quando a sessão está válida
-  if (req.isAuthenticated && req.isAuthenticated()) return next();
-  if (req.user) return next();
-  return res.status(401).json({ error: "Usuário não autenticado." });
-}
-
-// ---------- Upload (em disco, por enquanto) ----------
-const uploadDir = path.join(__dirname, "../uploads");
+// --- Configuração de Upload ---
+const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
-
 const upload = multer({ dest: uploadDir });
 
-// ---------- Helper Puppeteer ----------
+// --- Funções Auxiliares ---
 async function openBrowser() {
   const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
-  // Em Cloud Run use args sem sandbox; local também funciona.
   return puppeteer.launch({
-    headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    executablePath: execPath, // se não definido, usa Chromium baixado pelo Puppeteer
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    executablePath: execPath,
   });
 }
 
-/* ================== CAMPANHAS ================== */
+function safeFilename(name) {
+  return String(name || '')
+    .replace(/[^\w.\-() ]/g, '_')
+    .slice(0, 200);
+}
 
-// Criar campanha
-router.post("/", ensureAuthenticated, async (req, res) => {
-  try {
-    const { name, client, creativeLine, startDate, endDate, notes } = req.body;
+function makeApprovalHash() {
+  return crypto.randomBytes(16).toString('hex');
+}
 
-    if (!name || !client) {
-      return res
-        .status(400)
-        .json({ error: "Nome e cliente da campanha são obrigatórios." });
-    }
 
-    const campaign = await Campaign.create({
-      name,
-      client,
-      creativeLine: creativeLine || null,
-      startDate: startDate || null,
-      endDate: endDate || null,
-      notes: notes || null,
-      createdBy: req.user.id,
-      status: "draft",
-    });
+/* ================== ROTAS DE CAMPANHAS ================== */
 
-    res.status(201).json(campaign);
-  } catch (err) {
-    console.error("Erro ao importar do Drive:", err?.status || err?.code || err);
-    if (err?.response?.text) {
-      try {
-        console.error(await err.response.text());
-      } catch {}
-    }
-    res.status(500).json({ error: "Erro interno ao importar do Drive" });
-  }
-});
-
-// Listar campanhas do usuário logado
-router.get("/", ensureAuthenticated, async (req, res) => {
+// LISTAR todas as campanhas do usuário
+router.get('/', ensureAuth, async (req, res, next) => {
   try {
     const campaigns = await Campaign.findAll({
       where: { createdBy: req.user.id },
-      include: [
-        { model: Piece, attributes: ["id", "status"] },
-        {
-          model: Client,
-          as: "authorizedClients",
-          through: { attributes: ["assignedAt"] },
-          attributes: ["id", "name", "email"],
-        },
-      ],
-      order: [["createdAt", "DESC"]],
+      include: [{
+        model: CreativeLine,
+        as: 'creativeLines',
+        include: [{ model: Piece, as: 'pieces' }]
+      }],
+      order: [['createdAt', 'DESC']],
     });
-    res.json(campaigns);
-  } catch (err) {
-    console.error("Erro ao buscar campanhas:", err);
-    res.status(500).json({ error: "Erro interno ao buscar campanhas." });
+    res.status(200).json(campaigns);
+  } catch (error) {
+    console.error('Erro ao buscar campanhas:', error);
+    next(error);
   }
 });
 
-// Buscar campanha específica
-router.get("/:id", ensureAuthenticated, async (req, res) => {
+// CRIAR uma nova campanha
+router.post('/', ensureAuth, async (req, res, next) => {
+  try {
+    const { name, client } = req.body;
+    if (!name || !client) {
+      return res.status(400).json({ error: 'Nome e cliente da campanha são obrigatórios.' });
+    }
+    const campaign = await Campaign.create({ ...req.body, createdBy: req.user.id, status: 'draft' });
+    res.status(201).json(campaign);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// BUSCAR uma campanha específica
+router.get('/:id', ensureAuth, async (req, res, next) => {
   try {
     const campaign = await Campaign.findOne({
       where: { id: req.params.id, createdBy: req.user.id },
       include: [
         {
-          model: Piece,
-          order: [
-            ["order", "ASC"],
-            ["createdAt", "ASC"],
-          ],
+          model: CreativeLine,
+          as: 'creativeLines',
+          include: [{ model: Piece, as: 'pieces', order: [['order', 'ASC']] }]
         },
         {
           model: Client,
-          as: "authorizedClients",
-          through: {
-            attributes: [
-              "assignedAt",
-              "canApprove",
-              "canComment",
-              "clientStatus",
-            ],
-          },
-          attributes: ["id", "name", "email", "company"],
+          as: 'authorizedClients',
+          through: { attributes: [] }
         },
       ],
     });
-
-    if (!campaign)
-      return res.status(404).json({ error: "Campanha não encontrada" });
-
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
     res.json(campaign);
   } catch (err) {
-    console.error("Erro ao buscar campanha:", err);
-    res.status(500).json({ error: "Erro interno do servidor" });
+    next(err);
   }
 });
 
-/* ================== UPLOAD DE PEÇAS ================== */
 
-// Upload (estado inicial: 'uploaded')
-router.post(
-  "/:id/upload",
-  ensureAuthenticated,
-  upload.array("files"),
-  async (req, res) => {
-    try {
-      const campaignId = req.params.id;
+/* ================== ROTAS DE LINHAS CRIATIVAS ================== */
 
-      const campaign = await Campaign.findOne({
-        where: { id: campaignId, createdBy: req.user.id },
-      });
-      if (!campaign)
-        return res.status(404).json({ error: "Campanha não encontrada" });
-
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ error: "Nenhum arquivo enviado" });
-      }
-
-      const pieces = await Promise.all(
-        req.files.map((file) =>
-          Piece.create({
-            filename: file.filename,
-            originalName: file.originalname,
-            mimetype: file.mimetype,
-            size: file.size,
-            status: "uploaded",
-            CampaignId: campaignId,
-          })
-        )
-      );
-
-      res.json({
-        success: true,
-        message: `${pieces.length} arquivo(s) enviado(s) com sucesso`,
-        pieces: pieces.map((p) => ({
-          id: p.id,
-          filename: p.filename,
-          originalName: p.originalName,
-          mimetype: p.mimetype,
-          size: p.size,
-          status: p.status,
-          createdAt: p.createdAt,
-        })),
-      });
-    } catch (error) {
-      console.error("Erro no upload:", error);
-      res.status(500).json({ error: "Erro interno do servidor" });
-    }
-  }
-);
-
-// Marcar peças como anexadas (uploaded → attached)
-router.post("/:id/attach-pieces", ensureAuthenticated, async (req, res) => {
+// LISTAR linhas criativas de uma campanha
+router.get('/:campaignId/creative-lines', ensureAuth, async (req, res, next) => {
   try {
-    const campaignId = req.params.id;
-    const { pieceIds } = req.body;
+    const { campaignId } = req.params;
+    const campaign = await Campaign.findOne({ where: { id: campaignId, createdBy: req.user.id } });
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
 
-    if (!pieceIds || !Array.isArray(pieceIds) || pieceIds.length === 0) {
-      return res.status(400).json({ error: "IDs das peças são obrigatórios" });
-    }
-
-    const campaign = await Campaign.findOne({
-      where: { id: campaignId, createdBy: req.user.id },
+    const creativeLines = await CreativeLine.findAll({
+      where: { CampaignId: campaignId },
+      include: [{ model: Piece, as: 'pieces' }],
+      order: [['createdAt', 'ASC']],
     });
-    if (!campaign)
-      return res.status(404).json({ error: "Campanha não encontrada" });
-
-    const [updatedCount] = await Piece.update(
-      { status: "attached", attachedAt: new Date() },
-      {
-        where: { id: pieceIds, CampaignId: campaignId, status: "uploaded" },
-      }
-    );
-
-    if (updatedCount === 0) {
-      return res.status(400).json({
-        error:
-          "Nenhuma peça foi anexada. Verifique se as peças existem e estão no estado correto.",
-      });
-    }
-
-    res.json({
-      success: true,
-      message: `${updatedCount} peça(s) anexada(s)`,
-      attachedCount: updatedCount,
-    });
+    res.status(200).json(creativeLines);
   } catch (error) {
-    console.error("Erro ao anexar peças:", error);
-    res.status(500).json({ error: "Erro interno do servidor" });
+    next(error);
   }
 });
 
-// Desanexar peças (attached → uploaded)
-router.post("/:id/detach-pieces", ensureAuthenticated, async (req, res) => {
+// CRIAR linha criativa
+router.post('/:campaignId/creative-lines', ensureAuth, async (req, res, next) => {
   try {
-    const campaignId = req.params.id;
-    const { pieceIds } = req.body;
+    const { campaignId } = req.params;
+    const { name } = req.body;
+    if (!name || name.trim() === '') return res.status(400).json({ error: 'O nome da linha criativa é obrigatório.' });
+    
+    const campaign = await Campaign.findOne({ where: { id: campaignId, createdBy: req.user.id } });
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
 
-    const [updatedCount] = await Piece.update(
-      { status: "uploaded", attachedAt: null },
-      {
-        where: { id: pieceIds, CampaignId: campaignId, status: "attached" },
-      }
-    );
-
-    res.json({
-      success: true,
-      message: `${updatedCount} peça(s) desanexada(s)`,
-      detachedCount: updatedCount,
-    });
+    const newCreativeLine = await CreativeLine.create({ name: name.trim(), CampaignId: campaignId });
+    res.status(201).json(newCreativeLine);
   } catch (error) {
-    console.error("Erro ao desanexar peças:", error);
-    res.status(500).json({ error: "Erro interno do servidor" });
+    next(error);
   }
 });
 
-// === IMPORTAÇÃO DO GOOGLE DRIVE ===
-// POST /campaigns/:id/import-from-drive
-router.post("/:id/import-from-drive", ensureAuthenticated, async (req, res) => {
+
+/* ================== ROTAS DE UPLOAD & IMPORTAÇÃO DE PEÇAS ================== */
+
+// UPLOAD LOCAL (adaptado para o novo fluxo com Linhas Criativas)
+router.post('/:campaignId/upload', ensureAuth, upload.array('files'), async (req, res, next) => {
   try {
-    const campaignId = req.params.id;
+    const { campaignId } = req.params;
+    const creativeLineId = req.query.creativeLineId || req.body.creativeLineId;
+
+    const line = await CreativeLine.findOne({ where: { id: creativeLineId, CampaignId: campaignId } });
+    if (!line) return res.status(404).json({ error: 'Linha Criativa não encontrada ou não pertence à campanha.' });
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+    }
+
+    const pieces = await Promise.all(
+      req.files.map((file) =>
+        Piece.create({
+          filename: file.filename,
+          originalName: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+          status: 'uploaded',
+          CreativeLineId: line.id, // CORRIGIDO
+        })
+      )
+    );
+    res.json({ success: true, pieces });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// IMPORTAÇÃO DO GOOGLE DRIVE (CORRIGIDO)
+router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next) => {
+  try {
+    const { campaignId } = req.params;
+    const creativeLineId = req.query.creativeLineId || req.body.creativeLineId;
     const { files } = req.body;
 
+    if (!creativeLineId) {
+      return res.status(400).json({ error: 'O ID da Linha Criativa é obrigatório.' });
+    }
     if (!Array.isArray(files) || files.length === 0) {
-      return res
-        .status(400)
-        .json({ error: "Nenhum arquivo do Drive informado." });
+      return res.status(400).json({ error: 'Nenhum arquivo do Drive informado.' });
     }
 
-    if (!req.session?.accessToken) {
-      return res.status(401).json({ error: "Sem token do Drive na sessão." });
-    }
-
-    const campaign = await Campaign.findOne({
-      where: { id: campaignId, createdBy: req.user.id },
+    const creativeLine = await CreativeLine.findOne({
+      where: { id: creativeLineId, CampaignId: campaignId },
     });
-    if (!campaign) {
-      return res.status(404).json({ error: "Campanha não encontrada" });
+
+    if (!creativeLine) {
+      return res.status(404).json({ error: 'Linha Criativa não encontrada ou não pertence a esta campanha.' });
     }
 
-    const token = req.session.accessToken;
-    const saved = [];
-
-    for (const f of files) {
-      try {
-        const url = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
-        const r = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!r.ok || !r.body) {
-          const txt = await r.text();
-          console.error("[Drive] Falha download", f.id, r.status, txt);
-          return res.status(r.status).json({
-            error: `Falha ao baixar ${f.name || f.id}: ${r.statusText}`,
-            details: txt?.slice(0, 500),
-          });
+    const savedPieces = [];
+    for (const file of files) {
+      const [piece, created] = await Piece.findOrCreate({
+        where: { driveId: file.id },
+        defaults: {
+          originalName: file.name,
+          mimetype: file.mimeType || 'application/octet-stream',
+          status: 'imported',
+          CreativeLineId: creativeLine.id, // CORRIGIDO
+          driveId: file.id,
+          size: file.size || null,
         }
-
-        const safeName = (f.name || `${f.id}`).replace(/[^\w.\-() ]/g, "_");
-        const filePath = path.join(uploadDir, safeName);
-
-        await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(filePath));
-        const stat = await fs.promises.stat(filePath);
-
-        const piece = await Piece.create({
-          filename: safeName,
-          originalName: f.name || safeName,
-          mimetype: f.mimeType || "application/octet-stream",
-          size: stat.size,
-          status: "uploaded",
-          CampaignId: campaignId,
-        });
-
-        saved.push(piece);
-      } catch (e) {
-        console.error("[Drive] Erro ao salvar arquivo", f, e);
-        return res
-          .status(500)
-          .json({ error: "Erro ao salvar arquivo do Drive", details: e.message });
+      });
+      if (created) {
+        savedPieces.push(piece);
       }
     }
-
-    return res.json({ ok: true, saved });
-  } catch (err) {
-    console.error("Erro ao importar do Drive:", err);
-    return res
-      .status(500)
-      .json({ error: "Erro interno ao importar do Drive", details: err.message });
+    res.status(201).json({ saved: savedPieces });
+  } catch (error) {
+    next(error);
   }
 });
 
-/* ================== ENVIO PARA CLIENTE ================== */
 
-router.post("/:id/send-for-approval", ensureAuthenticated, async (req, res) => {
+/* ================== ROTAS DE ENVIO E APROVAÇÃO ================== */
+
+router.post('/:id/send-for-approval', ensureAuth, async (req, res, next) => {
   try {
     const campaignId = req.params.id;
-    const { clientIds } = req.body; // opcional
+    const { clientIds } = req.body || {};
 
-    const campaign = await Campaign.findOne({
-      where: { id: campaignId, createdBy: req.user.id },
-      include: [
-        { model: Piece, where: { status: "attached" }, required: false },
-      ],
+    const campaign = await Campaign.findOne({ where: { id: campaignId, createdBy: req.user.id } });
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
+
+    const lines = await CreativeLine.findAll({
+      where: { CampaignId: campaignId },
+      include: [{ model: Piece, as: 'pieces' }]
     });
 
-    if (!campaign)
-      return res.status(404).json({ error: "Campanha não encontrada" });
+    const readyStatuses = ['uploaded', 'imported'];
+    const pieceIdsToSend = lines.flatMap(line => line.pieces.filter(p => readyStatuses.includes(p.status)).map(p => p.id));
 
-    if (!campaign.Pieces || campaign.Pieces.length === 0) {
-      return res.status(400).json({
-        error: "Não é possível enviar uma campanha sem peças anexadas",
-      });
+    if (pieceIdsToSend.length === 0) {
+      return res.status(400).json({ error: 'Não há peças prontas para enviar nesta campanha.' });
     }
 
-    if (campaign.status !== "draft") {
-      return res
-        .status(400)
-        .json({ error: "Apenas campanhas em rascunho podem ser enviadas" });
-    }
+    await Piece.update({ status: 'pending' }, { where: { id: { [Op.in]: pieceIdsToSend } } });
 
-    await Piece.update(
-      { status: "pending" },
-      { where: { CampaignId: campaignId, status: "attached" } }
-    );
+    let approvalHash = campaign.approvalHash || makeApprovalHash();
 
     await campaign.update({
-      status: "sent_for_approval",
+      status: 'sent_for_approval',
       sentForApprovalAt: new Date(),
+      approvalHash: approvalHash, // Garante que o hash está salvo
     });
 
-    if (clientIds && clientIds.length > 0) {
-      await Promise.all(
-        clientIds.map((clientId) =>
-          CampaignClient.upsert({
-            campaignId,
-            clientId,
-            assignedAt: new Date(),
-          })
-        )
-      );
+    if (Array.isArray(clientIds) && clientIds.length > 0) {
+      await Promise.all(clientIds.map(clientId => CampaignClient.upsert({ campaignId, clientId, assignedAt: new Date() })));
     }
 
+    const approvalLinkBase = process.env.FRONTEND_URL || '';
     res.json({
       success: true,
-      message: "Campanha enviada para aprovação com sucesso",
+      message: 'Campanha enviada para aprovação com sucesso',
       campaign: {
         id: campaign.id,
-        name: campaign.name,
-        status: "sent_for_approval",
-        approvalLink: `${process.env.FRONTEND_URL}/client/approval/${campaign.approvalHash}`,
-        pieceCount: campaign.Pieces.length,
-        sentForApprovalAt: campaign.sentForApprovalAt,
+        approvalLink: approvalLinkBase ? `${approvalLinkBase}/client/approval/${approvalHash}` : null,
       },
     });
   } catch (error) {
-    console.error("Erro ao enviar campanha:", error);
-    res.status(500).json({ error: "Erro interno do servidor" });
+    next(error);
   }
 });
 
-/* ================== EXPORTAR PDF ================== */
+/* ================== ROTA DE EXPORTAÇÃO DE PDF ================== */
 
-router.get("/:id/export-pdf", ensureAuthenticated, async (req, res) => {
+router.get('/:id/export-pdf', ensureAuth, async (req, res, next) => {
   try {
     const campaignId = req.params.id;
-
     const campaign = await Campaign.findOne({
       where: { id: campaignId, createdBy: req.user.id },
-      include: [
-        { model: Piece, where: { status: "approved" }, required: false },
-      ],
+      include: [{ model: CreativeLine, as: 'creativeLines', include: [{ model: Piece, as: 'pieces' }] }],
     });
 
-    if (!campaign)
-      return res.status(404).json({ error: "Campanha não encontrada" });
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
 
-    const approvedPieces = campaign.Pieces || [];
-    if (approvedPieces.length === 0) {
-      return res
-        .status(400)
-        .json({ error: "Não há peças aprovadas para exportar" });
+    const approvedByLine = (campaign.creativeLines || [])
+      .map(line => ({
+        lineName: line.name,
+        pieces: (line.pieces || []).filter(p => p.status === 'approved'),
+      }))
+      .filter(bloc => bloc.pieces.length > 0);
+
+    if (approvedByLine.length === 0) {
+      return res.status(400).json({ error: 'Não há peças aprovadas para exportar' });
     }
+
+    const frontendBase = process.env.FRONTEND_URL || '';
+    const todayBR = new Date().toLocaleDateString('pt-BR');
 
     const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Peças Aprovadas - ${
-      campaign.name
-    }</title>
-<style>
-  body { font-family: Arial, sans-serif; margin: 40px; }
-  .header { text-align: center; border-bottom: 2px solid #ffc801; padding-bottom: 20px; margin-bottom: 30px; }
-  .campaign-info { margin-bottom: 30px; }
-  .piece { margin-bottom: 40px; page-break-inside: avoid; }
-  .piece img { max-width: 100%; height: auto; border: 1px solid #ddd; }
-  .piece-info { margin-top: 10px; }
-  .approved-stamp { color: green; font-weight: bold; }
-</style></head>
-<body>
-  <div class="header">
-    <h1>${campaign.name}</h1>
-    <h2>Peças Criativas Aprovadas</h2>
-  </div>
-
-  <div class="campaign-info">
-    <p><strong>Cliente:</strong> ${campaign.client}</p>
-    ${
-      campaign.creativeLine
-        ? `<p><strong>Linha Criativa:</strong> ${campaign.creativeLine}</p>`
-        : ""
-    }
-    <p><strong>Data de Exportação:</strong> ${new Date().toLocaleDateString(
-      "pt-BR"
-    )}</p>
-    <p><strong>Total de Peças Aprovadas:</strong> ${approvedPieces.length}</p>
-  </div>
-
-  ${approvedPieces
-    .map((piece, index) => {
-      const isImage = (piece.mimetype || "").startsWith("image/");
-      const src = `${process.env.FRONTEND_URL}/campaigns/files/${piece.filename}`;
-      return `<div class="piece">
-        <h3>Peça ${index + 1} - ${piece.originalName || piece.filename}</h3>
-        ${
-          isImage
-            ? `<img src="${src}" alt="${piece.originalName || piece.filename}">`
-            : `<div style="padding: 40px; border: 1px solid #ddd; text-align: center; background-color: #f5f5f5;">
-                 <p><strong>Arquivo:</strong> ${
-                   piece.originalName || piece.filename
-                 }</p>
-                 <p><strong>Tipo:</strong> ${piece.mimetype}</p>
-                 <p><strong>Tamanho:</strong> ${Math.round(
-                   (piece.size || 0) / 1024
-                 )} KB</p>
-               </div>`
-        }
-        <div class="piece-info">
-          <p class="approved-stamp">✅ APROVADA</p>
-          ${
-            piece.comment
-              ? `<p><strong>Comentário:</strong> ${piece.comment}</p>`
-              : ""
-          }
-          ${
-            piece.reviewedAt
-              ? `<p><strong>Data de Aprovação:</strong> ${new Date(
-                  piece.reviewedAt
-                ).toLocaleDateString("pt-BR")}</p>`
-              : ""
-          }
-        </div>
-      </div>`;
-    })
-    .join("")}
-
-  <div style="margin-top: 50px; text-align: center; color: #666; font-size: 12px;">
-    <p>Relatório gerado pelo sistema Aprobi em ${new Date().toLocaleString(
-      "pt-BR"
-    )}</p>
-  </div>
-</body></html>`;
+      <html><head><title>Peças Aprovadas - ${campaign.name}</title></head>
+      <body>
+        <h1>${campaign.name}</h1>
+        <p><strong>Cliente:</strong> ${campaign.client}</p>
+        <p><strong>Data de Exportação:</strong> ${todayBR}</p>
+        ${approvedByLine.map(bloc => `
+          <h2>Linha Criativa: ${bloc.lineName}</h2>
+          ${bloc.pieces.map(piece => {
+            const isImage = (piece.mimetype || '').startsWith('image/');
+            const src = piece.driveId ? `https://drive.google.com/uc?export=view&id=${piece.driveId}` : `${frontendBase}/campaigns/files/${encodeURIComponent(piece.filename)}`;
+            return `
+              <div>
+                <h3>${piece.originalName}</h3>
+                ${isImage ? `<img src="${src}" style="max-width: 500px;">` : `<p>Arquivo não visualizável: ${piece.originalName}</p>`}
+                <p style="color: green;">✅ APROVADA</p>
+              </div>
+            `;
+          }).join('')}
+        `).join('')}
+      </body></html>`;
 
     const browser = await openBrowser();
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
-
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      margin: { top: "20mm", right: "15mm", bottom: "20mm", left: "15mm" },
-    });
-
+    await page.setContent(html, { waitUntil: 'load' });
+    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
     await browser.close();
 
-    const filename = `${campaign.name.replace(
-      /[^a-zA-Z0-9]/g,
-      "_"
-    )}_aprovadas.pdf`;
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.setHeader("Content-Length", pdfBuffer.length);
-    return res.send(pdfBuffer);
+    const filename = `${safeFilename(campaign.name)}_aprovadas.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdfBuffer);
   } catch (error) {
-    console.error("Erro ao gerar PDF:", error);
-    return res
-      .status(500)
-      .json({ error: "Erro interno do servidor ao gerar PDF" });
+    next(error);
   }
 });
 
-/* ================== ARQUIVOS ESTÁTICOS ================== */
+/* ================== ROTA PARA SERVIR ARQUIVOS LOCAIS ================== */
 
-// Servir arquivos enviados (pasta uploads/)
-router.get("/files/:filename", (req, res) => {
+router.get('/files/:filename', (req, res) => {
   const filePath = path.join(uploadDir, req.params.filename);
-  if (!fs.existsSync(filePath))
-    return res.status(404).json({ error: "Arquivo não encontrado" });
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Arquivo não encontrado' });
+  }
   res.sendFile(filePath);
 });
+
 
 module.exports = router;
