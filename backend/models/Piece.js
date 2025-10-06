@@ -1,11 +1,12 @@
-// Em: backend/models/Piece.js (Código completo atualizado)
+// Em: backend/models/Piece.js (VERSÃO FINAL)
 const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
   const Piece = sequelize.define('Piece', {
     filename: {
       type: DataTypes.STRING,
-      allowNull: false,
+      // Não é mais obrigatório, pois podemos ter peças só do Drive
+      allowNull: true,
     },
     originalName: {
       type: DataTypes.STRING,
@@ -18,39 +19,35 @@ module.exports = (sequelize) => {
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    // NOVO CAMPO para rastrear arquivos do Google Drive
+    driveId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      unique: true, // Garante que não vamos importar o mesmo arquivo duas vezes
+    },
     status: {
-      type: DataTypes.ENUM('uploaded', 'attached', 'pending', 'approved', 'needs_adjustment', 'critical_points'),
+      type: DataTypes.ENUM('uploaded', 'attached', 'pending', 'approved', 'needs_adjustment', 'critical_points', 'imported'),
       defaultValue: 'uploaded',
     },
     comment: {
       type: DataTypes.TEXT,
     },
-    attachedAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
-    },
     reviewedAt: {
       type: DataTypes.DATE,
-      allowNull: true,
     },
     reviewedBy: {
       type: DataTypes.INTEGER,
-      allowNull: true,
-      references: {
-        model: 'Clients',
-        key: 'id'
-      }
+      references: { model: 'Clients', key: 'id' }
     },
     order: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
     },
-    // A peça agora pertence a uma Linha Criativa
     CreativeLineId: {
       type: DataTypes.INTEGER,
       allowNull: false,
       references: {
-        model: 'CreativeLines', // Nome da tabela gerada pelo Sequelize
+        model: 'CreativeLines',
         key: 'id'
       }
     }

@@ -3,9 +3,10 @@ import React, { useState, useEffect } from 'react';
 
 export default function DriveImportButton({
   campaignId,
-  creativeLineId, // <-- opcional: passe se quiser depurar/enviar junto
+  creativeLineId,
   googleAccessToken,
   onImported,
+  disabled: externalDisabled, 
   label = 'Importar do Google Drive',
 }) {
   const [busy, setBusy] = useState(false);
@@ -130,9 +131,8 @@ export default function DriveImportButton({
     <button
       type="button"
       onClick={handleClick}
-      disabled={busy}
-      className="inline-flex items-center rounded-lg border px-4 py-2 text-sm font-medium"
-      data-testid="drive-import-button"
+      disabled={busy || externalDisabled} // <-- MUDE AQUI
+      className="..." // A classe pode continuar a mesma
     >
       {busy ? 'Abrindo...' : label}
     </button>
