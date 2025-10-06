@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "main": "app.js",
   "type": "commonjs",
-"scripts": {
-  "dev": "NODE_ENV=development node app.js",
-  "start": "node app.js" 
-},
+  "scripts": {
+    "dev": "NODE_ENV=development node app.js",
+    "start": "node app.js"
+  },
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "connect-sqlite3": "^0.9.16",
@@ -21,6 +21,7 @@
     "node-fetch": "^2.7.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
+    "pptxgenjs": "^4.0.1",
     "puppeteer": "^24.23.0",
     "sequelize": "^6.37.7",
     "sqlite3": "^5.1.7",
