@@ -131,8 +131,12 @@ export default function DriveImportButton({
     <button
       type="button"
       onClick={handleClick}
-      disabled={busy || externalDisabled} // <-- MUDE AQUI
-      className="..." // A classe pode continuar a mesma
+      disabled={busy || externalDisabled}
+      className={`text-slate-600 font-semibold transition-colors ${
+        busy || externalDisabled
+          ? 'opacity-60 cursor-not-allowed'
+          : 'hover:text-blue-600 hover:underline underline-offset-4 cursor-pointer'
+      }`}
     >
       {busy ? 'Abrindo...' : label}
     </button>

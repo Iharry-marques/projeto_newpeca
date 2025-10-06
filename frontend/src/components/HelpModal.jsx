@@ -22,7 +22,7 @@ const HelpModal = ({ isOpen, onClose }) => {
                 </div>
                 <div className="p-8">
                     <ul className="space-y-4">
-                        {steps.map((index, step) => (
+                        {steps.map((step, index) => (
                             <li key={index} className="flex items-start">
                                 <CheckCircle className="w-5 h-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
                                 <span className="text-slate-700">{step}</span>
