@@ -1,6 +1,6 @@
 // Em: frontend/src/pages/HomePage.jsx (VERSÃO CORRIGIDA COM LAYOUT MASTER-DETAIL)
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, PlusCircle, FolderPlus, Trash2, Pencil, FileText, HelpCircle, ChevronsRight } from "lucide-react";
 import toast from "react-hot-toast";
 import { DndContext, closestCorners, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
@@ -164,7 +164,7 @@ const SortablePiece = ({
             style={style}
             {...attributes}
             {...listeners}
-            className={`cursor-${isSelectionMode || isEditing ? 'default' : 'grab'} ${isActive ? 'opacity-60' : ''}`}
+            className={`cursor-${isSelectionMode || isEditing ? 'default' : 'grab'} ${isSelectionMode || isEditing ? '' : 'active:cursor-grabbing'} ${isActive ? 'opacity-60' : ''}`}
         >
             <div className="relative">
                 {!isSelectionMode && !isEditing && (
@@ -336,14 +336,14 @@ const HomePage = ({ googleAccessToken }) => {
         finally { setIsLoadingCreativeLines(false); }
     }, []);
 
-    const parseErrorMessage = async (response, fallbackMessage) => {
+    const parseErrorMessage = useCallback(async (response, fallbackMessage) => {
         try {
             const data = await response.json();
             if (data?.error) return data.error;
             if (data?.message) return data.message;
         } catch (_) { /* body já consumido ou vazio */ }
         return fallbackMessage;
-    };
+    }, []);
 
     const persistPiecesOrder = useCallback(async (lineId, pieceIds) => {
         const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/creative-lines/${lineId}/reorder`, {
@@ -444,8 +444,17 @@ const HomePage = ({ googleAccessToken }) => {
         }
     };
 
-    const totalPieces = creativeLines.reduce((acc, line) => acc + (line.pieces?.length || 0), 0);
+    const allPieceIds = useMemo(() => {
+        const ids = [];
+        creativeLines.forEach((line) => {
+            (line.pieces || []).forEach((piece) => ids.push(piece.id));
+        });
+        return ids;
+    }, [creativeLines]);
+
+    const totalPieces = allPieceIds.length;
     const totalSelectedPieces = selectedPieceIds.size;
+    const allPiecesSelected = totalPieces > 0 && totalSelectedPieces === totalPieces;
 
     const exitSelectionMode = useCallback(() => {
         setIsSelectionMode(false);
@@ -475,6 +484,12 @@ const HomePage = ({ googleAccessToken }) => {
             else next.add(pieceId);
             return next;
         });
+    };
+
+    const handleSelectAllPieces = () => {
+        if (totalPieces === 0) return;
+        if (allPiecesSelected) return;
+        setSelectedPieceIds(new Set(allPieceIds));
     };
 
     const handleDeleteSelectedPiecesRequest = () => {
@@ -571,6 +586,7 @@ const HomePage = ({ googleAccessToken }) => {
     };
 
     const handlePieceDragStart = useCallback((event) => {
+        if (isSelectionMode || editingPieceId) return;
         const lineId = event.active?.data?.current?.lineId;
         if (!lineId) return;
         setDraggingPieceId(event.active.id);
@@ -581,7 +597,7 @@ const HomePage = ({ googleAccessToken }) => {
                 initialPieces: line ? [...(line.pieces || [])] : [],
             };
         });
-    }, [creativeLines]);
+    }, [creativeLines, isSelectionMode, editingPieceId]);
 
     const handlePieceDragCancel = useCallback(() => {
         if (dragState?.lineId && dragState.initialPieces) {
@@ -596,6 +612,10 @@ const HomePage = ({ googleAccessToken }) => {
     }, [dragState]);
 
     const handlePieceDragEnd = useCallback(async (event) => {
+        if (isSelectionMode || editingPieceId) {
+            handlePieceDragCancel();
+            return;
+        }
         const { active, over } = event;
         if (!active || !over) {
             handlePieceDragCancel();
@@ -659,7 +679,7 @@ const HomePage = ({ googleAccessToken }) => {
             setDragState(null);
             setDraggingPieceId(null);
         }
-    }, [persistPiecesOrder, dragState, handlePieceDragCancel]);
+    }, [persistPiecesOrder, dragState, handlePieceDragCancel, isSelectionMode, editingPieceId]);
 
     const startCampaignEdit = () => {
         if (!selectedCampaign) return;
@@ -922,6 +942,9 @@ const HomePage = ({ googleAccessToken }) => {
                                                 <button type="button" onClick={exitSelectionMode} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:text-slate-800 hover:border-slate-400 transition-colors">
                                                     Cancelar seleção
                                                 </button>
+                                                <button type="button" onClick={handleSelectAllPieces} disabled={allPiecesSelected} className="px-4 py-2 rounded-lg border border-blue-200 text-blue-600 font-semibold hover:border-blue-300 hover:text-blue-700 transition-colors disabled:opacity-50">
+                                                    {allPiecesSelected ? 'Todas selecionadas' : 'Selecionar todas'}
+                                                </button>
                                                 <button type="button" onClick={handleDeleteSelectedPiecesRequest} disabled={isDeletingPieces || totalSelectedPieces === 0} className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors disabled:opacity-50">
                                                     {isDeletingPieces ? 'Removendo...' : `Apagar peças (${totalSelectedPieces})`}
                                                 </button>
@@ -1022,6 +1045,16 @@ const HomePage = ({ googleAccessToken }) => {
                 </main>
             </div>
             
+            <ConfirmDialog
+                isOpen={isDeletePiecesDialogOpen}
+                title="Excluir peças selecionadas"
+                description={totalSelectedPieces === 1 ? 'Tem certeza que deseja excluir a peça selecionada?' : `Tem certeza que deseja excluir ${totalSelectedPieces} peças selecionadas?`}
+                confirmLabel="Excluir"
+                confirmVariant="danger"
+                loading={isDeletingPieces}
+                onCancel={() => { if (!isDeletingPieces) setDeletePiecesDialogOpen(false); }}
+                onConfirm={handleConfirmDeleteSelectedPieces}
+            />
             <ConfirmDialog
                 isOpen={!!campaignDeleteTarget}
                 title="Excluir campanha"
