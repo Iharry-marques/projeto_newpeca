@@ -24,6 +24,7 @@ const app = express();
 const isProduction = process.env.NODE_ENV === "production";
 const forceSameSiteNone = process.env.COOKIE_SAMESITE_NONE === 'true';
 const forceSecureCookie = process.env.COOKIE_FORCE_SECURE === 'true';
+const forcePartitionedCookie = process.env.COOKIE_PARTITIONED === 'true';
 
 app.set("trust proxy", 1);
 
@@ -46,17 +47,17 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: (() => {
+      const secureCookie = isProduction || forceSecureCookie;
       const cookieConfig = {
-        secure: isProduction || forceSecureCookie,
+        secure: secureCookie,
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000,
       };
 
-      const shouldUseSameSiteNone = (isProduction || forceSameSiteNone) && cookieConfig.secure;
-
+      const shouldUseSameSiteNone = (isProduction || forceSameSiteNone) && secureCookie;
       cookieConfig.sameSite = shouldUseSameSiteNone ? 'none' : 'lax';
 
-      if (shouldUseSameSiteNone) {
+      if (shouldUseSameSiteNone && forcePartitionedCookie) {
         cookieConfig.partitioned = true;
       }
 
