@@ -22,6 +22,8 @@ const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
+const forceSameSiteNone = process.env.COOKIE_SAMESITE_NONE === 'true';
+const forceSecureCookie = process.env.COOKIE_FORCE_SECURE === 'true';
 
 app.set("trust proxy", 1);
 
@@ -43,12 +45,23 @@ app.use(
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: {
-      secure: isProduction,
-      httpOnly: true,
-      sameSite: isProduction ? "none" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
-    },
+    cookie: (() => {
+      const cookieConfig = {
+        secure: isProduction || forceSecureCookie,
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000,
+      };
+
+      const shouldUseSameSiteNone = (isProduction || forceSameSiteNone) && cookieConfig.secure;
+
+      cookieConfig.sameSite = shouldUseSameSiteNone ? 'none' : 'lax';
+
+      if (shouldUseSameSiteNone) {
+        cookieConfig.partitioned = true;
+      }
+
+      return cookieConfig;
+    })(),
   })
 );
 
