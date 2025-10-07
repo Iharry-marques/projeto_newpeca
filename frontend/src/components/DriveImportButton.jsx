@@ -1,5 +1,6 @@
 // Em: frontend/src/components/DriveImportButton.jsx
 import React, { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 
 export default function DriveImportButton({
   campaignId,
@@ -27,7 +28,7 @@ export default function DriveImportButton({
 
   async function handleClick() {
     if (!googleAccessToken) {
-      alert('Permissão do Google Drive ausente. Clique em "Conectar ao Google Drive" e tente novamente.');
+      toast.error('Permissão do Google Drive ausente. Conecte ao Google Drive e tente novamente.');
       return;
     }
 
@@ -35,7 +36,7 @@ export default function DriveImportButton({
       setBusy(true);
 
       if (!window.gapi || !window.google?.picker) {
-        alert('Não consegui preparar o seletor do Google. Atualize a página e tente de novo.');
+        toast.error('Não consegui preparar o seletor do Google. Atualize a página e tente de novo.');
         return;
       }
 
@@ -97,7 +98,7 @@ export default function DriveImportButton({
 
             const json = JSON.parse(text);
             if (onImported) onImported(json.saved || []);
-            alert(`Importação concluída: ${json.saved?.length || 0} arquivo(s).`);
+            toast.success(`Importação concluída: ${json.saved?.length || 0} arquivo(s).`);
           } else if (data.action === google.picker.Action.CANCEL) {
             if (import.meta.env.DEV) {
               console.log('[DriveImportButton] Picker cancelado.', { campaignId, creativeLineId });
@@ -105,7 +106,7 @@ export default function DriveImportButton({
           }
         } catch (e) {
           console.error('[DriveImportButton] Erro no callback do Picker:', e);
-          alert(e.message || 'Erro ao importar do Drive.');
+          toast.error(e.message || 'Erro ao importar do Drive.');
         }
       };
 
@@ -121,7 +122,7 @@ export default function DriveImportButton({
       picker.setVisible(true);
     } catch (err) {
       console.error('[DriveImportButton] Erro ao abrir o Picker:', err);
-      alert('Não foi possível abrir o seletor do Google Drive.');
+      toast.error('Não foi possível abrir o seletor do Google Drive.');
     } finally {
       setBusy(false);
     }

@@ -19,6 +19,7 @@ import {
   Send
 } from 'lucide-react';
 import aprobiLogo from "../assets/aprobi-logo.jpg";
+import toast from 'react-hot-toast';
 
 // Estados de validação atualizados
 const VALIDATION_STATUSES = {
@@ -353,10 +354,10 @@ const ClientApprovalPage = () => {
     return { valid: true };
   };
 
-  const handleSubmit = async () => {
-    const validation = validateSubmission();
-    if (!validation.valid) {
-      alert(validation.message);
+    const handleSubmit = async () => {
+        const validation = validateSubmission();
+        if (!validation.valid) {
+      toast.error(validation.message);
       return;
     }
 
@@ -383,11 +384,10 @@ const ClientApprovalPage = () => {
 
       const result = await response.json();
 
-      // Mostrar resultado
-      alert(`Aprovação registrada com sucesso!\n\nResumo:\n- Aprovadas: ${result.stats.approved}\n- Precisam ajustes: ${result.stats.needsAdjustment}\n- Pontos críticos: ${result.stats.criticalPoints}`);
+      toast.success(`Aprovação registrada! Aprovadas: ${result.stats.approved} · Ajustes: ${result.stats.needsAdjustment} · Críticos: ${result.stats.criticalPoints}`);
       navigate('/client/success');
     } catch (err) {
-      alert('Erro ao enviar aprovação: ' + err.message);
+      toast.error('Erro ao enviar aprovação: ' + err.message);
     } finally {
       setIsSubmitting(false);
     }

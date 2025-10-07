@@ -1,6 +1,7 @@
 // frontend/src/ClientManagementPage.jsx
 
 import React, { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { 
   Users, 
   Plus, 
@@ -156,7 +157,7 @@ const ClientManagementPage = () => {
       }
 
       handleCloseModal();
-      alert(editingClient ? 'Cliente atualizado com sucesso!' : 'Cliente criado com sucesso!');
+      toast.success(editingClient ? 'Cliente atualizado com sucesso!' : 'Cliente criado com sucesso!');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -179,8 +180,9 @@ const ClientManagementPage = () => {
       setClients(prev => prev.map(client => 
         client.id === clientId ? updatedClient : client
       ));
+      toast.success(`Cliente ${updatedClient.isActive ? 'reativado' : 'desativado'} com sucesso.`);
     } catch (err) {
-      alert('Erro ao alterar status: ' + err.message);
+      toast.error('Erro ao alterar status: ' + err.message);
     }
   };
 
@@ -197,15 +199,21 @@ const ClientManagementPage = () => {
       const data = await response.json();
       
       if (data.campaigns.length === 0) {
-        alert('Este cliente ainda não tem campanhas atribuídas.');
+        toast('Este cliente ainda não tem campanhas atribuídas.');
       } else {
-        const campaignList = data.campaigns.map(c => 
-          `• ${c.name} (${c.status})`
-        ).join('\n');
-        alert(`Campanhas de ${data.client.name}:\n\n${campaignList}`);
+        toast.custom((t) => (
+          <div className="px-4 py-3 bg-white rounded-lg shadow-lg border border-slate-200 text-slate-700">
+            <p className="text-sm font-semibold">Campanhas de {data.client.name}</p>
+            <ul className="mt-2 text-xs space-y-1 list-disc list-inside">
+              {data.campaigns.map((c) => (
+                <li key={c.id}>{c.name} ({c.status})</li>
+              ))}
+            </ul>
+          </div>
+        ), { duration: 5000 });
       }
     } catch (err) {
-      alert('Erro ao carregar campanhas: ' + err.message);
+      toast.error('Erro ao carregar campanhas: ' + err.message);
     }
   };
 
