@@ -383,6 +383,7 @@ const HomePage = ({ googleAccessToken }) => {
         setEditingPieceId(null);
         setPieceNameDraft('');
         setIsSavingPieceName(false);
+        setSidebarOpen(false);
     }, [selectedCampaignId]);
 
     const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId);
