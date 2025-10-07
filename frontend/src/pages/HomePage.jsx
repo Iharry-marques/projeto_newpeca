@@ -927,7 +927,7 @@ const HomePage = ({ googleAccessToken }) => {
                 </div>
             </header>
             
-            <div className="flex flex-1 overflow-hidden relative">
+            <div className="flex flex-1 overflow-hidden relative bg-slate-100">
                 <CampaignSidebar 
                     campaigns={campaigns}
                     selectedCampaignId={selectedCampaignId}
@@ -938,7 +938,7 @@ const HomePage = ({ googleAccessToken }) => {
                     onCloseMobile={() => setSidebarOpen(false)}
                 />
 
-                <main className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6">
+                <main className="flex-1 overflow-y-auto border-l border-slate-200 bg-white/70 px-4 sm:px-6 lg:px-8 py-6">
                     {!selectedCampaign ? (
                          <div className="flex flex-col items-center justify-center h-full text-center text-slate-500">
                              <ChevronsRight className="w-16 h-16 text-slate-300 mb-4" />
