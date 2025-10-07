@@ -64,7 +64,10 @@ async function convertRawImageIfNeeded(buffer, { mimetype, originalName, filenam
   }
 
   try {
-    const converted = await sharp(buffer).toFormat('jpeg', { quality: 90 }).toBuffer();
+    const converted = await sharp(buffer)
+      .rotate()
+      .toFormat('jpeg', { quality: 90 })
+      .toBuffer();
     return { buffer: converted, mimetype: 'image/jpeg' };
   } catch (error) {
     console.warn(`[media] Falha ao converter arquivo RAW (${nameForCheck || mimetype || 'desconhecido'}): ${error.message}`);
@@ -143,8 +146,38 @@ async function getMediaDimensions(buffer, { mimetype, originalName, filename } =
   return null;
 }
 
+async function downscaleImageIfNeeded(buffer, { mimetype }, { maxWidth = 4096, maxHeight = 4096 } = {}) {
+  if (!sharp || !(mimetype || '').startsWith('image/')) {
+    return { buffer, mimetype };
+  }
+
+  try {
+    const meta = await sharp(buffer).metadata();
+    if (
+      (meta.width && meta.width > maxWidth) ||
+      (meta.height && meta.height > maxHeight)
+    ) {
+      const resized = await sharp(buffer)
+        .rotate()
+        .resize({
+          width: maxWidth,
+          height: maxHeight,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .toFormat('jpeg', { quality: 85 })
+        .toBuffer();
+      return { buffer: resized, mimetype: 'image/jpeg' };
+    }
+  } catch (error) {
+    console.warn('[media] Falha ao redimensionar imagem:', error.message);
+  }
+  return { buffer, mimetype };
+}
+
 module.exports = {
   isRawImage,
   convertRawImageIfNeeded,
+  downscaleImageIfNeeded,
   getMediaDimensions,
 };

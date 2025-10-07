@@ -11,7 +11,13 @@ const PptxGenJS = require('pptxgenjs');
 const fetch = require('node-fetch');
 const { Campaign, CreativeLine, Piece, Client } = require('../models');
 const { ensureAuth } = require('../auth');
-const { convertRawImageIfNeeded, getMediaDimensions } = require('../utils/media');
+const {
+  convertRawImageIfNeeded,
+  downscaleImageIfNeeded,
+  getMediaDimensions,
+} = require('../utils/media');
+
+const PPT_MAX_MEDIA_BYTES = Number(process.env.PPT_MAX_MEDIA_BYTES || 15 * 1024 * 1024); // 15 MB padrão
 
 // --- Configuração e Funções Auxiliares ---
 const uploadDir = path.join(__dirname, '../uploads');
@@ -73,14 +79,31 @@ async function getFileData(piece, accessToken) {
     }
 
     if (fileBuffer) {
-      const conversion = await convertRawImageIfNeeded(fileBuffer, {
+      let { buffer: normalizedBuffer, mimetype: resolvedMimetype } = await convertRawImageIfNeeded(fileBuffer, {
         mimetype: piece.mimetype,
         originalName: piece.originalName,
         filename: piece.filename,
       });
 
-      const normalizedBuffer = conversion.buffer || fileBuffer;
-      const resolvedMimetype = conversion.mimetype || piece.mimetype;
+      normalizedBuffer = normalizedBuffer || fileBuffer;
+      resolvedMimetype = resolvedMimetype || piece.mimetype;
+
+      if ((resolvedMimetype || '').startsWith('image/')) {
+        const downscaled = await downscaleImageIfNeeded(normalizedBuffer, { mimetype: resolvedMimetype });
+        normalizedBuffer = downscaled.buffer || normalizedBuffer;
+        resolvedMimetype = downscaled.mimetype || resolvedMimetype;
+      }
+
+      const mediaSizeBytes = normalizedBuffer.byteLength || normalizedBuffer.length || 0;
+
+      if (PPT_MAX_MEDIA_BYTES && mediaSizeBytes > PPT_MAX_MEDIA_BYTES) {
+        return {
+          skip: true,
+          reason: `Arquivo excede o limite de ${(PPT_MAX_MEDIA_BYTES / (1024 * 1024)).toFixed(1)} MB para inclusão no PPT.`,
+          mimetype: resolvedMimetype,
+        };
+      }
+
       const dimensions = await getMediaDimensions(normalizedBuffer, {
         mimetype: resolvedMimetype,
         originalName: piece.originalName,
@@ -357,6 +380,22 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
           
           if (isImage || isVideo) {
             const fileData = await getFileData(piece, userAccessToken);
+            if (fileData?.skip) {
+              slidePeca.addText(
+                fileData.reason || 'Arquivo muito grande para ser incluído no PPT. Baixe diretamente pela plataforma.',
+                {
+                  x: 3.5,
+                  y: 2.2,
+                  w: 6.0,
+                  h: 1.2,
+                  fontFace: 'Montserrat',
+                  fontSize: 14,
+                  color: 'C00000',
+                  align: 'center',
+                },
+              );
+              continue;
+            }
             if (fileData) {
               const area = { w: 6.0, h: 4.5 };
               let mediaDims = { w: area.w, h: area.h }; // Default to área inteira
