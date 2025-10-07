@@ -6,6 +6,7 @@ const { Op } = require('sequelize');
 const { Piece, CreativeLine, Campaign } = require('../models');
 const { ensureAuth } = require('../auth');
 const fetch = require('node-fetch'); // Necessário para buscar do Drive
+const { convertRawImageIfNeeded, isRawImage } = require('../utils/media');
 
 // ROTA PARA DELETAR MÚLTIPLAS PEÇAS
 router.delete('/', ensureAuth, async (req, res, next) => {
@@ -36,6 +37,44 @@ router.delete('/', ensureAuth, async (req, res, next) => {
 
     const deletedCount = await Piece.destroy({ where: { id: { [Op.in]: pieceIds } } });
     res.status(200).json({ message: `${deletedCount} peças foram apagadas com sucesso.` });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ROTA PARA ATUALIZAR NOME DA PEÇA
+router.put('/:id', ensureAuth, async (req, res, next) => {
+  try {
+    const { originalName } = req.body;
+    const trimmedName = String(originalName ?? '').trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'O nome da peça não pode ser vazio.' });
+    }
+
+    const piece = await Piece.findByPk(req.params.id, {
+      include: {
+        model: CreativeLine,
+        as: 'creativeLine',
+        include: {
+          model: Campaign,
+          as: 'campaign',
+          attributes: ['createdBy'],
+        },
+      },
+    });
+
+    if (!piece) {
+      return res.status(404).json({ error: 'Peça não encontrada.' });
+    }
+
+    if (piece.creativeLine?.campaign?.createdBy !== req.user.id) {
+      return res.status(403).json({ error: 'Acesso negado para editar esta peça.' });
+    }
+
+    piece.originalName = trimmedName;
+    await piece.save();
+
+    res.status(200).json(piece);
   } catch (error) {
     next(error);
   }
@@ -75,10 +114,22 @@ router.get('/drive/:pieceId', ensureAuth, async (req, res, next) => {
     if (!driveResponse.ok) {
       return res.status(driveResponse.status).json({ error: `Erro ao buscar arquivo do Google Drive: ${driveResponse.statusText}` });
     }
-    
-    // Define o tipo de conteúdo e envia a imagem para o frontend
-    res.setHeader('Content-Type', piece.mimetype);
-    driveResponse.body.pipe(res);
+
+    const contentType = driveResponse.headers.get('content-type') || piece.mimetype || 'application/octet-stream';
+
+    if (isRawImage(piece.mimetype, piece.originalName)) {
+      const driveBuffer = await driveResponse.buffer();
+      const { buffer: convertedBuffer, mimetype } = await convertRawImageIfNeeded(driveBuffer, {
+        mimetype: piece.mimetype,
+        originalName: piece.originalName,
+        filename: piece.filename,
+      });
+      res.setHeader('Content-Type', mimetype || contentType);
+      res.send(convertedBuffer);
+    } else {
+      res.setHeader('Content-Type', contentType);
+      driveResponse.body.pipe(res);
+    }
 
   } catch (error) {
     next(error);

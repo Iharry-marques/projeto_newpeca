@@ -1,14 +1,23 @@
 // Em: frontend/src/pages/HomePage.jsx (VERSÃO CORRIGIDA COM LAYOUT MASTER-DETAIL)
 
-import React, { useState, useCallback, useEffect, Fragment } from "react";
-import { Listbox, Transition } from "@headlessui/react";
-import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, ChevronDown, PlusCircle, FolderPlus, Trash2, XCircle, Pencil, FileText, HelpCircle, ChevronsRight } from "lucide-react";
+import React, { useState, useCallback, useEffect } from "react";
+import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, PlusCircle, FolderPlus, Trash2, Pencil, FileText, HelpCircle, ChevronsRight } from "lucide-react";
 import toast from "react-hot-toast";
+import { DndContext, closestCorners, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import aprobiLogo from "../assets/aprobi-logo.jpg";
 import DriveImportButton from "../components/DriveImportButton";
 import CampaignSidebar from "../components/CampaignSidebar"; // Novo Componente
 import HelpModal from "../components/HelpModal"; // Novo Componente
+
+const CLIENT_OPTIONS = [
+    { name: "AMERICANAS" }, { name: "ARAMIS" }, { name: "CANTU" }, { name: "COGNA" },
+    { name: "ESPORTE DA SORTE" }, { name: "HASDEX" }, { name: "HORTIFRUTI NATURAL DA TERRA" },
+    { name: "IDEAZARVOS" }, { name: "KEETA" }, { name: "MASTERCARD" }, { name: "O BOTICARIO" },
+    { name: "RD" }, { name: "SAMSUNG" }, { name: "SAMSUNG E STORE" }, { name: "SICREDI" }, { name: "VIVO" },
+].sort((a, b) => a.name.localeCompare(b.name));
 
 // =================== COMPONENTES INTERNOS ===================
 // Manter os componentes de Modal e Viewer aqui para evitar erros de escopo
@@ -20,7 +29,7 @@ const FileTypeIcon = ({ fileType }) => {
     return <FileIcon className="w-5 h-5 text-slate-500" />;
 };
 
-const FileViewer = ({ file, onOpenPopup, isSelectionMode, isSelected, onSelect }) => {
+const FileViewer = ({ file, onOpenPopup, isSelectionMode = false, isSelected = false, onSelect = () => {}, isDragging = false }) => {
     const mime = file.mimetype || "";
     const name = file.originalName || file.filename || "arquivo";
     
@@ -32,6 +41,7 @@ const FileViewer = ({ file, onOpenPopup, isSelectionMode, isSelected, onSelect }
     }
     
     const handleCardClick = () => {
+        if (isDragging) return;
         if (isSelectionMode) onSelect(file.id);
         else onOpenPopup({ ...file, _resolved: { mime, name, url } });
     };
@@ -49,7 +59,7 @@ const FileViewer = ({ file, onOpenPopup, isSelectionMode, isSelected, onSelect }
                     {isSelected && <Check className="w-4 h-4 text-blue-600" />}
                 </div>
             )}
-            <div className={`bg-white rounded-xl shadow-sm border p-3 transition-all duration-200 cursor-pointer ${isSelectionMode ? (isSelected ? 'border-blue-500 shadow-md' : 'border-slate-200 hover:border-blue-400') : 'border-slate-200 hover:shadow-md hover:border-blue-400 hover:-translate-y-1'}`}>
+            <div className={`bg-white rounded-xl shadow-sm border p-3 transition-all duration-200 cursor-pointer ${isSelectionMode ? (isSelected ? 'border-blue-500 shadow-md' : 'border-slate-200 hover:border-blue-400') : 'border-slate-200 hover:shadow-md hover:border-blue-400 hover:-translate-y-1'} ${isDragging ? 'pointer-events-none' : ''}`}>
                 {renderPreview()}
                 <div className="mt-3 flex items-center">
                     <div className="flex-shrink-0"><FileTypeIcon fileType={mime} /></div>
@@ -87,17 +97,142 @@ const FileUpload = ({ onFilesAdded, driveButton, lineId }) => {
     </div>;
 };
 
+const ConfirmDialog = ({ isOpen, title, description, confirmLabel = "Confirmar", confirmVariant = "danger", loading = false, onConfirm, onCancel }) => {
+    if (!isOpen) return null;
+
+    const confirmClasses = confirmVariant === "danger"
+        ? "bg-red-600 hover:bg-red-700 focus:ring-red-500"
+        : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500";
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                <div className="px-6 pt-6 pb-2">
+                    <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
+                    <p className="mt-2 text-sm text-slate-500">{description}</p>
+                </div>
+                <div className="px-6 py-4 bg-slate-50 flex items-center justify-end gap-3">
+                    <button type="button" onClick={onCancel} disabled={loading} className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:text-slate-800 transition-colors disabled:opacity-50">
+                        Cancelar
+                    </button>
+                    <button type="button" onClick={onConfirm} disabled={loading} className={`px-5 py-2 rounded-lg text-sm font-semibold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 ${confirmClasses}`}>
+                        {loading ? "Processando..." : confirmLabel}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const SortablePiece = ({
+    piece,
+    lineId,
+    onOpenPopup,
+    draggingPieceId,
+    isSelectionMode,
+    onToggleSelect,
+    isSelected,
+    onStartRename,
+    isEditing,
+    renameValue,
+    onRenameChange,
+    onRenameCancel,
+    onRenameSubmit,
+    isSavingRename,
+}) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+        id: piece.id,
+        data: { lineId },
+        disabled: isSelectionMode || isEditing,
+    });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+    };
+
+    const isActive = isDragging || draggingPieceId === piece.id;
+
+    const handleRenameSubmit = (e) => {
+        e.preventDefault();
+        onRenameSubmit(piece.id);
+    };
+
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            {...listeners}
+            className={`cursor-${isSelectionMode || isEditing ? 'default' : 'grab'} ${isActive ? 'opacity-60' : ''}`}
+        >
+            <div className="relative">
+                {!isSelectionMode && !isEditing && (
+                    <button
+                        type="button"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            onStartRename(piece);
+                        }}
+                        className="absolute top-2 right-2 z-20 p-2 rounded-full bg-white/90 text-slate-500 shadow hover:text-blue-600 hover:bg-white transition-colors"
+                    >
+                        <Pencil className="w-4 h-4" />
+                    </button>
+                )}
+
+                <FileViewer
+                    file={piece}
+                    onOpenPopup={onOpenPopup}
+                    isSelectionMode={isSelectionMode}
+                    isSelected={isSelected}
+                    onSelect={onToggleSelect}
+                    isDragging={isActive}
+                />
+
+                {isEditing && (
+                    <div className="absolute inset-0 z-30 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl p-4 flex flex-col justify-center">
+                        <form onSubmit={handleRenameSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Renomear peça</label>
+                                <input
+                                    type="text"
+                                    value={renameValue}
+                                    onChange={(e) => onRenameChange(e.target.value)}
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                    placeholder="Novo nome"
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={onRenameCancel}
+                                    className="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700"
+                                    disabled={isSavingRename}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                                    disabled={isSavingRename}
+                                >
+                                    {isSavingRename ? 'Salvando...' : 'Salvar' }
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
     const [name, setName] = useState("");
-    const [selectedClient, setSelectedClient] = useState(null);
+    const [selectedClient, setSelectedClient] = useState("");
     const [error, setError] = useState("");
     const [isCreating, setIsCreating] = useState(false);
-    const clients = [
-        { name: "AMERICANAS" }, { name: "ARAMIS" }, { name: "CANTU" }, { name: "COGNA" }, { name: "ESPORTE DA SORTE" },
-        { name: "HASDEX" }, { name: "HORTIFRUTI NATURAL DA TERRA" }, { name: "IDEAZARVOS" }, { name: "KEETA" },
-        { name: "MASTERCARD" }, { name: "O BOTICARIO" }, { name: "RD" }, { name: "SAMSUNG" },
-        { name: "SAMSUNG E STORE" }, { name: "SICREDI" }, { name: "VIVO" },
-    ].sort((a, b) => a.name.localeCompare(b.name));
 
     if (!isOpen) return null;
 
@@ -107,7 +242,7 @@ const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
         setError("");
         setIsCreating(true);
         try {
-            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ name, client: selectedClient.name }) });
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ name, client: selectedClient }) });
             if (!res.ok) { const errData = await res.json().catch(() => ({})); throw new Error(errData.error || "Falha ao criar campanha."); }
             const newCampaign = await res.json();
             onCampaignCreated(newCampaign);
@@ -115,7 +250,7 @@ const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
         } catch (err) { setError(err.message); } 
         finally { setIsCreating(false); }
     };
-    const handleClose = () => { setName(""); setSelectedClient(null); setError(""); onClose(); };
+    const handleClose = () => { setName(""); setSelectedClient(""); setError(""); onClose(); };
     
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -127,9 +262,9 @@ const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
                         <div><label htmlFor="campaignName" className="block text-sm font-semibold text-slate-700 mb-2">Nome da Campanha *</label><input type="text" id="campaignName" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none" required /></div>
                         <div>
                            <label className="block text-sm font-semibold text-slate-700 mb-2">Cliente *</label>
-                           <select value={selectedClient?.name || ''} onChange={e => setSelectedClient({name: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none bg-no-repeat bg-right pr-8" style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1.5em 1.5em' }}>
+                           <select value={selectedClient} onChange={e => setSelectedClient(e.target.value)} className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none bg-no-repeat bg-right pr-8" style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1.5em 1.5em' }}>
                                 <option value="" disabled>Selecione um cliente</option>
-                                {clients.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                                {CLIENT_OPTIONS.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
                            </select>
                         </div>
                     </div>
@@ -153,6 +288,30 @@ const HomePage = ({ googleAccessToken }) => {
     const [newCreativeLineName, setNewCreativeLineName] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
     const [isHelpModalOpen, setHelpModalOpen] = useState(false);
+    const [isEditingCampaign, setIsEditingCampaign] = useState(false);
+    const [campaignDraft, setCampaignDraft] = useState({ name: "", client: "" });
+    const [isSavingCampaign, setIsSavingCampaign] = useState(false);
+    const [campaignDeleteTarget, setCampaignDeleteTarget] = useState(null);
+    const [isDeletingCampaign, setIsDeletingCampaign] = useState(false);
+    const [editingLineId, setEditingLineId] = useState(null);
+    const [lineNameDraft, setLineNameDraft] = useState("");
+    const [isSavingLine, setIsSavingLine] = useState(false);
+    const [lineDeleteTarget, setLineDeleteTarget] = useState(null);
+    const [isDeletingLine, setIsDeletingLine] = useState(false);
+    const [dragState, setDragState] = useState(null);
+    const [draggingPieceId, setDraggingPieceId] = useState(null);
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedPieceIds, setSelectedPieceIds] = useState(new Set());
+    const [isDeletingPieces, setIsDeletingPieces] = useState(false);
+    const [isDeletePiecesDialogOpen, setDeletePiecesDialogOpen] = useState(false);
+    const [editingPieceId, setEditingPieceId] = useState(null);
+    const [pieceNameDraft, setPieceNameDraft] = useState('');
+    const [isSavingPieceName, setIsSavingPieceName] = useState(false);
+
+    const sensors = useSensors(
+        useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+        useSensor(TouchSensor, { pressDelay: 150, activationConstraint: { distance: 6 } })
+    );
     
     const fetchCampaigns = useCallback(async () => {
         setIsLoadingCampaigns(true);
@@ -177,8 +336,55 @@ const HomePage = ({ googleAccessToken }) => {
         finally { setIsLoadingCreativeLines(false); }
     }, []);
 
+    const parseErrorMessage = async (response, fallbackMessage) => {
+        try {
+            const data = await response.json();
+            if (data?.error) return data.error;
+            if (data?.message) return data.message;
+        } catch (_) { /* body já consumido ou vazio */ }
+        return fallbackMessage;
+    };
+
+    const persistPiecesOrder = useCallback(async (lineId, pieceIds) => {
+        const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/creative-lines/${lineId}/reorder`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ pieceOrder: pieceIds }),
+        });
+        if (!res.ok) {
+            const message = await parseErrorMessage(res, "Não foi possível salvar a nova ordem das peças.");
+            throw new Error(message);
+        }
+        const data = await res.json().catch(() => ({}));
+        return data?.pieces || [];
+    }, [parseErrorMessage]);
+
     useEffect(() => { fetchCampaigns(); }, [fetchCampaigns]);
     useEffect(() => { fetchCreativeLines(selectedCampaignId); }, [selectedCampaignId, fetchCreativeLines]);
+    useEffect(() => {
+        setIsEditingCampaign(false);
+        setIsSavingCampaign(false);
+        setCampaignDraft({ name: "", client: "" });
+        setCampaignDeleteTarget(null);
+        setIsDeletingCampaign(false);
+        setEditingLineId(null);
+        setIsSavingLine(false);
+        setLineNameDraft("");
+        setLineDeleteTarget(null);
+        setIsDeletingLine(false);
+        setDragState(null);
+        setDraggingPieceId(null);
+        setIsSelectionMode(false);
+        setSelectedPieceIds(new Set());
+        setIsDeletingPieces(false);
+        setDeletePiecesDialogOpen(false);
+        setEditingPieceId(null);
+        setPieceNameDraft('');
+        setIsSavingPieceName(false);
+    }, [selectedCampaignId]);
+
+    const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId);
 
     const handleCampaignCreated = (newCampaign) => {
         setCampaigns((prev) => [newCampaign, ...prev]);
@@ -237,15 +443,395 @@ const HomePage = ({ googleAccessToken }) => {
             toast.success(`${savedPieces.length} peça(s) importada(s) do Drive!`);
         }
     };
-    
-    const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId);
+
+    const totalPieces = creativeLines.reduce((acc, line) => acc + (line.pieces?.length || 0), 0);
+    const totalSelectedPieces = selectedPieceIds.size;
+
+    const exitSelectionMode = useCallback(() => {
+        setIsSelectionMode(false);
+        setSelectedPieceIds(new Set());
+    }, []);
+
+    const handleToggleSelectionMode = () => {
+        if (isSelectionMode) {
+            exitSelectionMode();
+            return;
+        }
+        if (totalPieces === 0) {
+            toast.error('Não há peças para remover.');
+            return;
+        }
+        if (editingPieceId) {
+            setEditingPieceId(null);
+            setPieceNameDraft('');
+        }
+        setIsSelectionMode(true);
+    };
+
+    const handleToggleSelectPiece = (pieceId) => {
+        setSelectedPieceIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(pieceId)) next.delete(pieceId);
+            else next.add(pieceId);
+            return next;
+        });
+    };
+
+    const handleDeleteSelectedPiecesRequest = () => {
+        if (totalSelectedPieces === 0) {
+            toast.error('Selecione ao menos uma peça para remover.');
+            return;
+        }
+        setDeletePiecesDialogOpen(true);
+    };
+
+    const handleConfirmDeleteSelectedPieces = async () => {
+        const pieceIds = Array.from(selectedPieceIds);
+        if (pieceIds.length === 0) return;
+        setIsDeletingPieces(true);
+        const loadingToast = toast.loading('Removendo peças selecionadas...');
+        try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/pieces`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ pieceIds }),
+            });
+            if (!res.ok) {
+                const message = await parseErrorMessage(res, 'Não foi possível remover as peças selecionadas.');
+                throw new Error(message);
+            }
+            setCreativeLines((prevLines) =>
+                prevLines.map((line) => ({
+                    ...line,
+                    pieces: (line.pieces || []).filter((piece) => !selectedPieceIds.has(piece.id)),
+                }))
+            );
+            toast.success(`${pieceIds.length} peça(s) removida(s).`, { id: loadingToast });
+            exitSelectionMode();
+        } catch (error) {
+            toast.error(error.message || 'Erro ao remover peças.', { id: loadingToast });
+        } finally {
+            setIsDeletingPieces(false);
+            setDeletePiecesDialogOpen(false);
+        }
+    };
+
+    const startPieceRename = (piece) => {
+        setEditingPieceId(piece.id);
+        setPieceNameDraft(piece.originalName || '');
+        if (isSelectionMode) {
+            exitSelectionMode();
+        }
+    };
+
+    const cancelPieceRename = () => {
+        if (isSavingPieceName) return;
+        setEditingPieceId(null);
+        setPieceNameDraft('');
+    };
+
+    const handlePieceRenameSubmit = async (pieceId) => {
+        const trimmed = pieceNameDraft.trim();
+        if (!trimmed) {
+            toast.error('O nome da peça não pode ser vazio.');
+            return;
+        }
+
+        setIsSavingPieceName(true);
+        const loadingToast = toast.loading('Salvando nome da peça...');
+        try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/pieces/${pieceId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ originalName: trimmed }),
+            });
+            if (!res.ok) {
+                const message = await parseErrorMessage(res, 'Não foi possível atualizar o nome da peça.');
+                throw new Error(message);
+            }
+            const updatedPiece = await res.json();
+            setCreativeLines((prevLines) =>
+                prevLines.map((line) => ({
+                    ...line,
+                    pieces: (line.pieces || []).map((piece) =>
+                        piece.id === updatedPiece.id ? { ...piece, originalName: updatedPiece.originalName } : piece
+                    ),
+                }))
+            );
+            toast.success('Nome da peça atualizado!', { id: loadingToast });
+            setEditingPieceId(null);
+            setPieceNameDraft('');
+        } catch (error) {
+            toast.error(error.message || 'Erro ao atualizar a peça.', { id: loadingToast });
+        } finally {
+            setIsSavingPieceName(false);
+        }
+    };
+
+    const handlePieceDragStart = useCallback((event) => {
+        const lineId = event.active?.data?.current?.lineId;
+        if (!lineId) return;
+        setDraggingPieceId(event.active.id);
+        setDragState(() => {
+            const line = creativeLines.find((l) => l.id === lineId);
+            return {
+                lineId,
+                initialPieces: line ? [...(line.pieces || [])] : [],
+            };
+        });
+    }, [creativeLines]);
+
+    const handlePieceDragCancel = useCallback(() => {
+        if (dragState?.lineId && dragState.initialPieces) {
+            setCreativeLines((prev) =>
+                prev.map((line) =>
+                    line.id === dragState.lineId ? { ...line, pieces: [...dragState.initialPieces] } : line
+                )
+            );
+        }
+        setDragState(null);
+        setDraggingPieceId(null);
+    }, [dragState]);
+
+    const handlePieceDragEnd = useCallback(async (event) => {
+        const { active, over } = event;
+        if (!active || !over) {
+            handlePieceDragCancel();
+            return;
+        }
+
+        const activeLineId = active.data?.current?.lineId;
+        const overLineId = over.data?.current?.lineId;
+
+        if (!activeLineId || !overLineId || activeLineId !== overLineId) {
+            handlePieceDragCancel();
+            return;
+        }
+
+        if (active.id === over.id) {
+            setDragState(null);
+            setDraggingPieceId(null);
+            return;
+        }
+
+        let reorderedPieces = null;
+        setCreativeLines((prevLines) =>
+            prevLines.map((line) => {
+                if (line.id !== activeLineId) return line;
+                const currentPieces = line.pieces || [];
+                const oldIndex = currentPieces.findIndex((piece) => piece.id === active.id);
+                const newIndex = currentPieces.findIndex((piece) => piece.id === over.id);
+                if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return line;
+                reorderedPieces = arrayMove(currentPieces, oldIndex, newIndex);
+                return { ...line, pieces: reorderedPieces };
+            })
+        );
+
+        if (!reorderedPieces) {
+            setDragState(null);
+            setDraggingPieceId(null);
+            return;
+        }
+
+        try {
+            const pieceIds = reorderedPieces.map((piece) => piece.id);
+            const updatedPieces = await persistPiecesOrder(activeLineId, pieceIds);
+            if (Array.isArray(updatedPieces) && updatedPieces.length > 0) {
+                setCreativeLines((prevLines) =>
+                    prevLines.map((line) =>
+                        line.id === activeLineId ? { ...line, pieces: updatedPieces } : line
+                    )
+                );
+            }
+            toast.success("Ordem atualizada!");
+        } catch (error) {
+            toast.error(error.message || "Falha ao salvar a nova ordem.");
+            if (dragState?.initialPieces) {
+                setCreativeLines((prevLines) =>
+                    prevLines.map((line) =>
+                        line.id === dragState.lineId ? { ...line, pieces: [...dragState.initialPieces] } : line
+                    )
+                );
+            }
+        } finally {
+            setDragState(null);
+            setDraggingPieceId(null);
+        }
+    }, [persistPiecesOrder, dragState, handlePieceDragCancel]);
+
+    const startCampaignEdit = () => {
+        if (!selectedCampaign) return;
+        setCampaignDraft({
+            name: selectedCampaign.name || "",
+            client: selectedCampaign.client || "",
+        });
+        setIsEditingCampaign(true);
+    };
+
+    const cancelCampaignEdit = () => {
+        if (isSavingCampaign) return;
+        setIsEditingCampaign(false);
+        setCampaignDraft({ name: "", client: "" });
+    };
+
+    const handleCampaignEditSubmit = async (e) => {
+        e.preventDefault();
+        if (!selectedCampaignId) return;
+
+        const name = campaignDraft.name.trim();
+        const client = campaignDraft.client.trim();
+        if (!name || !client) {
+            toast.error("Nome e cliente são obrigatórios.");
+            return;
+        }
+
+        const loadingToast = toast.loading("Atualizando campanha...");
+        setIsSavingCampaign(true);
+        try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ name, client }),
+            });
+            if (!res.ok) {
+                const message = await parseErrorMessage(res, "Não foi possível atualizar a campanha.");
+                throw new Error(message);
+            }
+            const updatedCampaign = await res.json();
+            setCampaigns(prev => prev.map(c => c.id === updatedCampaign.id ? { ...c, ...updatedCampaign } : c));
+            setIsEditingCampaign(false);
+            setCampaignDraft({ name: "", client: "" });
+            toast.success("Campanha atualizada!", { id: loadingToast });
+        } catch (error) {
+            toast.error(error.message || "Erro ao atualizar a campanha.", { id: loadingToast });
+        } finally {
+            setIsSavingCampaign(false);
+        }
+    };
+
+    const handleDeleteCampaignRequest = () => {
+        if (!selectedCampaign) return;
+        setCampaignDeleteTarget(selectedCampaign);
+    };
+
+    const handleConfirmDeleteCampaign = async () => {
+        if (!campaignDeleteTarget) return;
+        const target = campaignDeleteTarget;
+        const loadingToast = toast.loading("Removendo campanha...");
+        setIsDeletingCampaign(true);
+        try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns/${target.id}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                const message = await parseErrorMessage(res, "Não foi possível remover a campanha.");
+                throw new Error(message);
+            }
+            setCampaigns(prev => {
+                const updated = prev.filter(c => c.id !== target.id);
+                if (target.id === selectedCampaignId) {
+                    const fallback = updated[0]?.id || "";
+                    setSelectedCampaignId(fallback);
+                    if (!fallback) setCreativeLines([]);
+                }
+                return updated;
+            });
+            setCampaignDeleteTarget(null);
+            toast.success(`Campanha "${target.name}" removida!`, { id: loadingToast });
+        } catch (error) {
+            toast.error(error.message || "Erro ao remover campanha.", { id: loadingToast });
+        } finally {
+            setIsDeletingCampaign(false);
+        }
+    };
+
+    const startLineEdit = (line) => {
+        setEditingLineId(line.id);
+        setLineNameDraft(line.name || "");
+    };
+
+    const cancelLineEdit = () => {
+        if (isSavingLine) return;
+        setEditingLineId(null);
+        setLineNameDraft("");
+    };
+
+    const handleLineEditSubmit = async (e) => {
+        e.preventDefault();
+        if (!editingLineId) return;
+
+        const nextName = lineNameDraft.trim();
+        if (!nextName) {
+            toast.error("O nome da pasta não pode ser vazio.");
+            return;
+        }
+
+        const loadingToast = toast.loading("Atualizando pasta...");
+        setIsSavingLine(true);
+        try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/creative-lines/${editingLineId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ name: nextName }),
+            });
+            if (!res.ok) {
+                const message = await parseErrorMessage(res, "Não foi possível atualizar a pasta.");
+                throw new Error(message);
+            }
+            const updatedLine = await res.json();
+            setCreativeLines(prev => prev.map(line => line.id === updatedLine.id ? { ...line, name: updatedLine.name } : line));
+            toast.success("Pasta atualizada!", { id: loadingToast });
+            cancelLineEdit();
+        } catch (error) {
+            toast.error(error.message || "Erro ao atualizar a pasta.", { id: loadingToast });
+        } finally {
+            setIsSavingLine(false);
+        }
+    };
+
+    const handleDeleteLineRequest = (line) => {
+        setLineDeleteTarget(line);
+    };
+
+    const handleConfirmDeleteLine = async () => {
+        if (!lineDeleteTarget) return;
+        const target = lineDeleteTarget;
+        const loadingToast = toast.loading("Removendo pasta...");
+        setIsDeletingLine(true);
+        try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/creative-lines/${target.id}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                const message = await parseErrorMessage(res, "Não foi possível remover a pasta.");
+                throw new Error(message);
+            }
+            setCreativeLines(prev => prev.filter(line => line.id !== target.id));
+            if (editingLineId === target.id) {
+                setEditingLineId(null);
+                setLineNameDraft("");
+            }
+            setLineDeleteTarget(null);
+            toast.success(`Pasta "${target.name}" removida!`, { id: loadingToast });
+        } catch (error) {
+            toast.error(error.message || "Erro ao remover pasta.", { id: loadingToast });
+        } finally {
+            setIsDeletingLine(false);
+        }
+    };
 
     return (
         <div className="h-screen w-screen bg-slate-100 flex flex-col antialiased">
             <header className="bg-white shadow-sm border-b border-slate-200 flex-shrink-0 z-10">
                 <div className="max-w-full mx-auto px-6 h-24 flex items-center justify-between">
                     <div className="flex items-center space-x-4">
-                        <img src={aprobiLogo} alt="Aprobi Logo" className="w-24 h-auto" />
+                        <img src={aprobiLogo} alt="Aprobi Logo" className="w-32 max-h-20 h-auto object-contain" />
                     </div>
                     <button onClick={() => setHelpModalOpen(true)} className="p-2 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors">
                         <HelpCircle className="w-6 h-6" />
@@ -271,61 +857,191 @@ const HomePage = ({ googleAccessToken }) => {
                          </div>
                     ) : (
                         <div>
-                            <div className="flex items-start justify-between mb-8">
-                                <div>
-                                    <p className="text-sm text-slate-500">{selectedCampaign.client}</p>
-                                    <h1 className="text-3xl font-bold text-slate-800">{selectedCampaign.name}</h1>
+                            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6 mb-8">
+                                <div className="flex-1">
+                                    {isEditingCampaign ? (
+                                        <form onSubmit={handleCampaignEditSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                                            <div className="grid gap-4 md:grid-cols-2">
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-slate-600 mb-2">Nome da Campanha</label>
+                                                    <input type="text" value={campaignDraft.name} onChange={(e) => setCampaignDraft((prev) => ({ ...prev, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none" placeholder="Nome da campanha" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-slate-600 mb-2">Cliente</label>
+                                                    <select value={campaignDraft.client} onChange={(e) => setCampaignDraft((prev) => ({ ...prev, client: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none bg-no-repeat bg-right pr-8" style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1.5em 1.5em' }}>
+                                                        <option value="" disabled>Selecione um cliente</option>
+                                                        {CLIENT_OPTIONS.map(c => (
+                                                            <option key={c.name} value={c.name}>{c.name}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col sm:flex-row sm:justify-end gap-3 mt-6">
+                                                <button type="button" onClick={cancelCampaignEdit} disabled={isSavingCampaign} className="px-5 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:text-slate-800 hover:border-slate-400 transition-colors disabled:opacity-50">
+                                                    Cancelar
+                                                </button>
+                                                <button type="submit" disabled={isSavingCampaign} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50">
+                                                    {isSavingCampaign ? "Salvando..." : "Salvar alterações"}
+                                                </button>
+                                            </div>
+                                        </form>
+                                    ) : (
+                                        <div className="flex flex-col gap-3">
+                                            <span className="text-xs font-semibold tracking-[0.2em] text-slate-400 uppercase">{selectedCampaign.client}</span>
+                                            <div className="flex items-start gap-3">
+                                                <h1 className="text-3xl font-bold text-slate-800">{selectedCampaign.name}</h1>
+                                                <div className="flex items-center gap-2">
+                                                    <button type="button" onClick={startCampaignEdit} className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-colors">
+                                                        <Pencil className="w-4 h-4" />
+                                                    </button>
+                                                    <button type="button" onClick={handleDeleteCampaignRequest} className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 transition-colors">
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                <a href={`${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/export-ppt`} target="_blank" rel="noopener noreferrer" className="flex items-center px-4 py-2 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition-colors shadow-sm hover:shadow-md">
+                                <a href={`${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/export-ppt`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center h-11 px-4 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition-colors shadow-sm hover:shadow-md lg:self-start">
                                     <FileText className="w-4 h-4 mr-2" />
                                     Exportar PPT
                                 </a>
                             </div>
 
                             <div className="mb-10">
-                                <form onSubmit={handleCreateCreativeLine} className="flex gap-4 max-w-xl">
-                                    <input type="text" value={newCreativeLineName} onChange={(e) => setNewCreativeLineName(e.target.value)} placeholder="Nome da nova Linha Criativa / Pasta..." className="flex-grow p-3 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition" />
-                                    <button type="submit" className="flex-shrink-0 px-5 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed" disabled={!newCreativeLineName.trim()}>
-                                        <FolderPlus className="w-5 h-5" />
-                                    </button>
-                                </form>
+                                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                                    <form onSubmit={handleCreateCreativeLine} className="flex gap-4 max-w-xl flex-1">
+                                        <input type="text" value={newCreativeLineName} onChange={(e) => setNewCreativeLineName(e.target.value)} placeholder="Nome da nova Linha Criativa / Pasta..." className="flex-grow p-3 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition" />
+                                        <button type="submit" className="flex-shrink-0 px-5 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed" disabled={!newCreativeLineName.trim()}>
+                                            <FolderPlus className="w-5 h-5" />
+                                        </button>
+                                    </form>
+                                    <div className="flex items-center gap-3">
+                                        {isSelectionMode ? (
+                                            <>
+                                                <button type="button" onClick={exitSelectionMode} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:text-slate-800 hover:border-slate-400 transition-colors">
+                                                    Cancelar seleção
+                                                </button>
+                                                <button type="button" onClick={handleDeleteSelectedPiecesRequest} disabled={isDeletingPieces || totalSelectedPieces === 0} className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors disabled:opacity-50">
+                                                    {isDeletingPieces ? 'Removendo...' : `Apagar peças (${totalSelectedPieces})`}
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <button type="button" onClick={handleToggleSelectionMode} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:text-slate-800 hover:border-slate-400 transition-colors" disabled={totalPieces === 0}>
+                                                Remover Peças
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                             
                             {isLoadingCreativeLines ? ( <p className="text-slate-500">Carregando...</p> ) : (
-                                <div className="space-y-12">
-                                    {creativeLines.map(line => (
-                                        <section key={line.id}>
-                                            <h2 className="text-xl font-bold text-slate-700 pb-2 border-b-2 border-slate-200 mb-6">{line.name}</h2>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-6">
-                                                {(line.pieces || []).map(piece => (
-                                                    <FileViewer key={piece.id} file={piece} onOpenPopup={setSelectedFile} />
-                                                ))}
-                                                <FileUpload 
-                                                    onFilesAdded={handleFilesAdded}
-                                                    lineId={line.id}
-                                                    driveButton={
-                                                        <DriveImportButton 
-                                                            campaignId={selectedCampaignId} 
-                                                            creativeLineId={line.id} 
-                                                            googleAccessToken={googleAccessToken}
-                                                            onImported={(pieces) => handleDriveImport(pieces, line.id)}
-                                                            label="Importar do Drive" 
+                                <DndContext
+                                    sensors={sensors}
+                                    collisionDetection={closestCorners}
+                                    onDragStart={handlePieceDragStart}
+                                    onDragEnd={handlePieceDragEnd}
+                                    onDragCancel={handlePieceDragCancel}
+                                >
+                                    <div className="space-y-12">
+                                        {creativeLines.map(line => (
+                                            <section key={line.id}>
+                                                <div className="pb-3 border-b-2 border-slate-200 mb-6">
+                                                    {editingLineId === line.id ? (
+                                                        <form onSubmit={handleLineEditSubmit} className="flex flex-col sm:flex-row sm:items-center gap-3">
+                                                            <input type="text" value={lineNameDraft} onChange={(e) => setLineNameDraft(e.target.value)} className="flex-1 p-3 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none" placeholder="Nome da pasta" />
+                                                            <div className="flex items-center gap-2">
+                                                                <button type="button" onClick={cancelLineEdit} disabled={isSavingLine} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:text-slate-800 hover:border-slate-400 transition-colors disabled:opacity-50">
+                                                                    Cancelar
+                                                                </button>
+                                                                <button type="submit" disabled={isSavingLine} className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50">
+                                                                    {isSavingLine ? "Salvando..." : "Salvar"}
+                                                                </button>
+                                                            </div>
+                                                        </form>
+                                                    ) : (
+                                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                                            <h2 className="text-xl font-bold text-slate-700">{line.name}</h2>
+                                                            <div className="flex items-center gap-2">
+                                                                <button type="button" onClick={() => startLineEdit(line)} className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-colors">
+                                                                    <Pencil className="w-4 h-4" />
+                                                                </button>
+                                                                <button type="button" onClick={() => handleDeleteLineRequest(line)} className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 transition-colors">
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <SortableContext items={(line.pieces || []).map(piece => piece.id)} strategy={rectSortingStrategy}>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-6">
+                                                        {(line.pieces || []).map(piece => (
+                                                            <SortablePiece
+                                                                key={piece.id}
+                                                                piece={piece}
+                                                                lineId={line.id}
+                                                                onOpenPopup={setSelectedFile}
+                                                                draggingPieceId={draggingPieceId}
+                                                                isSelectionMode={isSelectionMode}
+                                                                onToggleSelect={() => handleToggleSelectPiece(piece.id)}
+                                                                isSelected={selectedPieceIds.has(piece.id)}
+                                                                onStartRename={startPieceRename}
+                                                                isEditing={editingPieceId === piece.id}
+                                                                renameValue={pieceNameDraft}
+                                                                onRenameChange={setPieceNameDraft}
+                                                                onRenameCancel={cancelPieceRename}
+                                                                onRenameSubmit={handlePieceRenameSubmit}
+                                                                isSavingRename={isSavingPieceName}
+                                                            />
+                                                        ))}
+                                                        <FileUpload 
+                                                            onFilesAdded={handleFilesAdded}
+                                                            lineId={line.id}
+                                                            driveButton={
+                                                                <DriveImportButton 
+                                                                    campaignId={selectedCampaignId} 
+                                                                    creativeLineId={line.id} 
+                                                                    googleAccessToken={googleAccessToken}
+                                                                    onImported={(pieces) => handleDriveImport(pieces, line.id)}
+                                                                    label="Importar do Drive" 
+                                                                />
+                                                            }
                                                         />
-                                                    }
-                                                />
-                                            </div>
-                                        </section>
-                                    ))}
-                                    {creativeLines.length === 0 && (
-                                         <p className="text-slate-500 text-center py-8">Nenhuma linha criativa foi criada para esta campanha ainda.</p>
-                                    )}
-                                </div>
+                                                    </div>
+                                                </SortableContext>
+                                            </section>
+                                        ))}
+                                        {creativeLines.length === 0 && (
+                                             <p className="text-slate-500 text-center py-8">Nenhuma linha criativa foi criada para esta campanha ainda.</p>
+                                        )}
+                                    </div>
+                                </DndContext>
                             )}
                         </div>
                     )}
                 </main>
             </div>
             
+            <ConfirmDialog
+                isOpen={!!campaignDeleteTarget}
+                title="Excluir campanha"
+                description={`Tem certeza que deseja excluir a campanha "${campaignDeleteTarget?.name}"? Todas as linhas criativas e arquivos serão removidos.`}
+                confirmLabel="Excluir"
+                confirmVariant="danger"
+                loading={isDeletingCampaign}
+                onCancel={() => { if (!isDeletingCampaign) setCampaignDeleteTarget(null); }}
+                onConfirm={handleConfirmDeleteCampaign}
+            />
+            <ConfirmDialog
+                isOpen={!!lineDeleteTarget}
+                title="Excluir pasta"
+                description={`Tem certeza que deseja excluir a pasta "${lineDeleteTarget?.name}"? Os arquivos vinculados serão removidos.`}
+                confirmLabel="Excluir"
+                confirmVariant="danger"
+                loading={isDeletingLine}
+                onCancel={() => { if (!isDeletingLine) setLineDeleteTarget(null); }}
+                onConfirm={handleConfirmDeleteLine}
+            />
             <FilePopup file={selectedFile} onClose={() => setSelectedFile(null)} />
             <HelpModal isOpen={isHelpModalOpen} onClose={() => setHelpModalOpen(false)} />
             <NewCampaignModal isOpen={isCampaignModalOpen} onClose={() => setCampaignModalOpen(false)} onCampaignCreated={handleCampaignCreated} />
