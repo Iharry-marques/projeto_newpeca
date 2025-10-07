@@ -81,7 +81,7 @@ const FilePopup = ({ file, onClose }) => {
     return <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}><div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto flex flex-col" onClick={(e) => e.stopPropagation()}><div className="flex items-center justify-between p-4 border-b border-slate-200"><h3 className="text-lg font-bold text-slate-800 truncate">{name}</h3><button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-600" /></button></div><div className="p-6 flex-grow flex items-center justify-center">{renderContent()}</div></div></div>;
 };
 
-const FileUpload = ({ onFilesAdded, driveButton, lineId }) => {
+const FileUpload = ({ onFilesAdded, driveButton, lineId, maxFileSizeMb }) => {
     const [isDragging, setIsDragging] = useState(false);
     const handleDrop = useCallback((e) => { e.preventDefault(); setIsDragging(false); onFilesAdded(Array.from(e.dataTransfer.files), lineId); }, [onFilesAdded, lineId]);
     const handleDragOver = useCallback((e) => { e.preventDefault(); setIsDragging(true); }, []);
@@ -91,6 +91,7 @@ const FileUpload = ({ onFilesAdded, driveButton, lineId }) => {
         <div className="flex flex-col items-center">
              <Upload className="h-8 w-8 text-slate-400 mb-2" />
             <p className="text-sm text-slate-600 font-medium">Arraste e solte ou <label htmlFor={`file-input-${lineId}`} className="font-semibold text-blue-600 hover:text-blue-800 cursor-pointer">selecione os arquivos</label></p>
+            {maxFileSizeMb && <p className="mt-2 text-xs text-slate-400">Limite por arquivo: {maxFileSizeMb} MB</p>}
         </div>
         <input type="file" multiple onChange={handleFileInput} className="hidden" id={`file-input-${lineId}`} />
         <div className="mt-4">{driveButton}</div>
@@ -412,17 +413,37 @@ const HomePage = ({ googleAccessToken }) => {
         }
     };
     
+    const uploadMaxBytes = Number(import.meta.env.VITE_UPLOAD_MAX_BYTES || 200 * 1024 * 1024);
+    const uploadMaxMb = Math.round(uploadMaxBytes / (1024 * 1024));
+
     const handleFilesAdded = useCallback(async (newFiles, lineId) => {
         if (!lineId) return toast.error("Erro: ID da pasta não encontrado.");
         if (!newFiles || newFiles.length === 0) return;
-        
-        const loadingToast = toast.loading(`Enviando ${newFiles.length} arquivo(s)...`);
+
+        const filesArray = Array.from(newFiles);
+        const oversized = filesArray.filter((file) => file.size > uploadMaxBytes);
+        const allowed = filesArray.filter((file) => file.size <= uploadMaxBytes);
+
+        if (oversized.length > 0) {
+            if (oversized.length === filesArray.length) {
+                toast.error(`Os arquivos selecionados excedem o limite de ${uploadMaxMb} MB.`);
+                return;
+            }
+            toast.error(`Alguns arquivos foram ignorados por exceder ${uploadMaxMb} MB.`);
+        }
+
+        if (allowed.length === 0) return;
+
+        const loadingToast = toast.loading(`Enviando ${allowed.length} arquivo(s)...`);
         try {
             const formData = new FormData();
-            newFiles.forEach((file) => formData.append("files", file));
+            allowed.forEach((file) => formData.append("files", file));
             const url = `${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/upload?creativeLineId=${lineId}`;
             const res = await fetch(url, { method: "POST", credentials: "include", body: formData });
-            if (!res.ok) throw new Error("Falha no upload.");
+            if (!res.ok) {
+                const message = await parseErrorMessage(res, "Falha no upload.");
+                throw new Error(message);
+            }
             const { pieces } = await res.json();
             
             setCreativeLines(prevLines => prevLines.map(line => 
@@ -431,11 +452,11 @@ const HomePage = ({ googleAccessToken }) => {
                     : line
             ));
             
-            toast.success(`${newFiles.length} arquivo(s) enviados!`, { id: loadingToast });
+            toast.success(`${allowed.length} arquivo(s) enviados!`, { id: loadingToast });
         } catch (error) {
             toast.error(error.message, { id: loadingToast });
         }
-    }, [selectedCampaignId]);
+    }, [selectedCampaignId, uploadMaxBytes, uploadMaxMb, parseErrorMessage]);
 
     const handleDriveImport = (savedPieces, lineId) => {
         if (savedPieces && savedPieces.length > 0 && lineId) {
@@ -1080,13 +1101,14 @@ const HomePage = ({ googleAccessToken }) => {
                                                                 isSavingRename={isSavingPieceName}
                                                             />
                                                         ))}
-                                                        <FileUpload 
-                                                            onFilesAdded={handleFilesAdded}
-                                                            lineId={line.id}
-                                                            driveButton={
-                                                                <DriveImportButton 
-                                                                    campaignId={selectedCampaignId} 
-                                                                    creativeLineId={line.id} 
+                                                <FileUpload 
+                                                    onFilesAdded={handleFilesAdded}
+                                                    lineId={line.id}
+                                                    maxFileSizeMb={uploadMaxMb}
+                                                    driveButton={
+                                                        <DriveImportButton 
+                                                            campaignId={selectedCampaignId} 
+                                                            creativeLineId={line.id} 
                                                                     googleAccessToken={googleAccessToken}
                                                                     onImported={(pieces) => handleDriveImport(pieces, line.id)}
                                                                     label="Importar do Drive" 
