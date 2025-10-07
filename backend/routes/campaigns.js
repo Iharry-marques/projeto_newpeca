@@ -15,16 +15,35 @@ const {
   convertRawImageIfNeeded,
   downscaleImageIfNeeded,
   getMediaDimensions,
+  compressVideoIfNeeded,
 } = require('../utils/media');
-
-const PPT_MAX_MEDIA_BYTES = Number(process.env.PPT_MAX_MEDIA_BYTES || 15 * 1024 * 1024); // 15 MB padrão
 
 // --- Configuração e Funções Auxiliares ---
 const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
-const upload = multer({ dest: uploadDir });
+const UPLOAD_MAX_FILE_BYTES = Number(process.env.UPLOAD_MAX_FILE_BYTES || 200 * 1024 * 1024); // ~200MB
+const UPLOAD_MAX_FILE_MB = Math.round(UPLOAD_MAX_FILE_BYTES / (1024 * 1024));
+const PPT_MAX_MEDIA_BYTES = Number(process.env.PPT_MAX_MEDIA_BYTES || 40 * 1024 * 1024); // ~40MB
+
+const upload = multer({
+  dest: uploadDir,
+  limits: { fileSize: UPLOAD_MAX_FILE_BYTES },
+});
+
+const handleUpload = (req, res, next) => {
+  const uploader = upload.array('files');
+  uploader(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: `Cada arquivo deve ter no máximo ${UPLOAD_MAX_FILE_MB} MB.` });
+      }
+      return next(err);
+    }
+    next();
+  });
+};
 
 function safeFilename(name) {
   return String(name || '').replace(/[^\w.\-() ]/g, '_').slice(0, 200);
@@ -92,6 +111,20 @@ async function getFileData(piece, accessToken) {
         const downscaled = await downscaleImageIfNeeded(normalizedBuffer, { mimetype: resolvedMimetype });
         normalizedBuffer = downscaled.buffer || normalizedBuffer;
         resolvedMimetype = downscaled.mimetype || resolvedMimetype;
+      }
+
+      if ((resolvedMimetype || '').startsWith('video/')) {
+        const compressed = await compressVideoIfNeeded(
+          normalizedBuffer,
+          {
+            mimetype: resolvedMimetype,
+            originalName: piece.originalName,
+            filename: piece.filename,
+          },
+          { maxBytes: PPT_MAX_MEDIA_BYTES }
+        );
+        normalizedBuffer = compressed.buffer || normalizedBuffer;
+        resolvedMimetype = compressed.mimetype || resolvedMimetype;
       }
 
       const mediaSizeBytes = normalizedBuffer.byteLength || normalizedBuffer.length || 0;
@@ -215,7 +248,7 @@ router.post('/:campaignId/creative-lines', ensureAuth, async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
-router.post('/:campaignId/upload', ensureAuth, upload.array('files'), async (req, res, next) => {
+router.post('/:campaignId/upload', ensureAuth, handleUpload, async (req, res, next) => {
   try {
     const { campaignId } = req.params;
     const creativeLineId = req.query.creativeLineId || req.body.creativeLineId;

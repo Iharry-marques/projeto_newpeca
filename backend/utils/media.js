@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const mime = require('mime-types');
 const imageSize = require('image-size');
 const { path: ffprobePath } = require('@ffprobe-installer/ffprobe');
+const { path: ffmpegPath } = require('@ffmpeg-installer/ffmpeg');
 let sharp;
 
 try {
@@ -175,9 +176,76 @@ async function downscaleImageIfNeeded(buffer, { mimetype }, { maxWidth = 4096, m
   return { buffer, mimetype };
 }
 
+async function compressVideoIfNeeded(
+  buffer,
+  { mimetype, originalName, filename } = {},
+  { maxBytes = 40 * 1024 * 1024 } = {}
+) {
+  if (!Buffer.isBuffer(buffer) || !(mimetype || '').startsWith('video/') || !ffmpegPath) {
+    return { buffer, mimetype };
+  }
+
+  if ((buffer.byteLength || buffer.length || 0) <= maxBytes) {
+    return { buffer, mimetype };
+  }
+
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ffmpeg-'));
+  const inputExt = guessExtension(mimetype, originalName || filename);
+  const inputPath = path.join(tmpDir, `input${inputExt}`);
+  const outputPath = path.join(tmpDir, `output.mp4`);
+  const execFileAsync = promisify(execFile);
+
+  try {
+    await fs.promises.writeFile(inputPath, buffer);
+
+    const crfAttempts = [26, 30, 32, 35];
+    let bestBuffer = buffer;
+    let bestMime = mimetype;
+
+    for (const crf of crfAttempts) {
+      await fs.promises.rm(outputPath, { force: true }).catch(() => {});
+      const args = [
+        '-y',
+        '-i',
+        inputPath,
+        '-vf', "scale='if(gt(iw,ih),min(iw,1280),-2)':'if(gt(ih,iw),min(ih,1280),-2)'",
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', String(crf),
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        outputPath,
+      ];
+
+      await execFileAsync(ffmpegPath, args);
+
+      const converted = await fs.promises.readFile(outputPath);
+      if (converted.byteLength < bestBuffer.byteLength) {
+        bestBuffer = converted;
+        bestMime = 'video/mp4';
+      }
+
+      if (converted.byteLength <= maxBytes) {
+        return { buffer: converted, mimetype: 'video/mp4' };
+      }
+    }
+
+    return { buffer: bestBuffer, mimetype: bestMime };
+  } catch (error) {
+    console.warn(`[media] Falha ao comprimir vídeo (${originalName || filename || mimetype || 'desconhecido'}): ${error.message}`);
+    return { buffer, mimetype };
+  } finally {
+    await fs.promises.rm(inputPath, { force: true }).catch(() => {});
+    await fs.promises.rm(outputPath, { force: true }).catch(() => {});
+    await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 module.exports = {
   isRawImage,
   convertRawImageIfNeeded,
   downscaleImageIfNeeded,
+  compressVideoIfNeeded,
   getMediaDimensions,
 };
