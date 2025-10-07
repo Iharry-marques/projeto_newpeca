@@ -11,7 +11,7 @@ const CampaignSidebar = ({
     onCloseMobile = () => {},
 }) => {
     const baseAsideClasses =
-        "bg-white border-r border-slate-200 flex flex-col transition-transform duration-200 ease-out lg:translate-x-0 lg:static lg:h-full";
+        "bg-white flex flex-col transition-transform duration-200 ease-out lg:translate-x-0 lg:static lg:h-full shadow-lg";
 
     return (
         <>
@@ -22,11 +22,9 @@ const CampaignSidebar = ({
                 onClick={onCloseMobile}
             />
             <aside
-                className={`fixed inset-y-0 left-0 z-40 w-72 transform ${
-                    isMobileOpen ? 'translate-x-0' : '-translate-x-full'
-                } ${baseAsideClasses} lg:w-80`}
+                className={`fixed inset-y-0 left-0 z-40 w-72 transform ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} ${baseAsideClasses} lg:w-80 lg:border-r lg:border-slate-200 lg:bg-white`}
             >
-                <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-white">
                     <button
                         onClick={onOpenNewCampaignModal}
                         className="flex-1 flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md"
