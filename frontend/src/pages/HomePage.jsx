@@ -1,7 +1,7 @@
 // Em: frontend/src/pages/HomePage.jsx (VERSÃO CORRIGIDA COM LAYOUT MASTER-DETAIL)
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
-import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, PlusCircle, FolderPlus, Trash2, Pencil, FileText, HelpCircle, ChevronsRight, Menu } from "lucide-react";
+import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, PlusCircle, FolderPlus, Trash2, Pencil, FileText, HelpCircle, ChevronsRight, Menu, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { DndContext, closestCorners, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
@@ -308,6 +308,7 @@ const HomePage = ({ googleAccessToken }) => {
     const [editingPieceId, setEditingPieceId] = useState(null);
     const [pieceNameDraft, setPieceNameDraft] = useState('');
     const [isSavingPieceName, setIsSavingPieceName] = useState(false);
+    const [isExportingPpt, setIsExportingPpt] = useState(false);
 
     const sensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
@@ -384,6 +385,7 @@ const HomePage = ({ googleAccessToken }) => {
         setPieceNameDraft('');
         setIsSavingPieceName(false);
         setSidebarOpen(false);
+        setIsExportingPpt(false);
     }, [selectedCampaignId]);
 
     const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId);
@@ -443,6 +445,37 @@ const HomePage = ({ googleAccessToken }) => {
                     : line
             ));
             toast.success(`${savedPieces.length} peça(s) importada(s) do Drive!`);
+        }
+    };
+
+    const handleExportPpt = async () => {
+        if (!selectedCampaignId || !selectedCampaign) return;
+        if (isExportingPpt) return;
+        setIsExportingPpt(true);
+        const loadingToast = toast.loading("Gerando apresentação...");
+        try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/export-ppt`, {
+                credentials: "include",
+            });
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.error || "Não foi possível gerar a apresentação.");
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const fallbackName = selectedCampaign?.name ? `${selectedCampaign.name}.pptx` : 'campanha.pptx';
+            link.download = fallbackName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => window.URL.revokeObjectURL(url), 3000);
+            toast.success("Apresentação gerada com sucesso!", { id: loadingToast });
+        } catch (error) {
+            toast.error(error.message || "Erro ao exportar a apresentação.", { id: loadingToast });
+        } finally {
+            setIsExportingPpt(false);
         }
     };
 
@@ -938,10 +971,24 @@ const HomePage = ({ googleAccessToken }) => {
                                         </div>
                                     )}
                                 </div>
-                                <a href={`${import.meta.env.VITE_BACKEND_URL}/campaigns/${selectedCampaignId}/export-ppt`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center h-11 px-4 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition-colors shadow-sm hover:shadow-md lg:self-start">
-                                    <FileText className="w-4 h-4 mr-2" />
-                                    Exportar PPT
-                                </a>
+                                <button
+                                    type="button"
+                                    onClick={handleExportPpt}
+                                    disabled={isExportingPpt}
+                                    className="flex items-center justify-center h-11 px-4 bg-orange-500 text-white font-semibold rounded-lg transition-colors shadow-sm hover:shadow-md lg:self-start disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                    {isExportingPpt ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            Gerando PPT...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FileText className="w-4 h-4 mr-2" />
+                                            Exportar PPT
+                                        </>
+                                    )}
+                                </button>
                             </div>
 
                             <div className="mb-10">
@@ -1094,6 +1141,15 @@ const HomePage = ({ googleAccessToken }) => {
             <FilePopup file={selectedFile} onClose={() => setSelectedFile(null)} />
             <HelpModal isOpen={isHelpModalOpen} onClose={() => setHelpModalOpen(false)} />
             <NewCampaignModal isOpen={isCampaignModalOpen} onClose={() => setCampaignModalOpen(false)} onCampaignCreated={handleCampaignCreated} />
+            {isExportingPpt && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl px-8 py-6 flex flex-col items-center gap-3 text-center">
+                        <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+                        <h3 className="text-lg font-semibold text-slate-800">Gerando apresentação</h3>
+                        <p className="text-sm text-slate-500 max-w-xs">Dependendo do número de arquivos pode levar alguns minutos. Você será notificado automaticamente quando finalizar.</p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

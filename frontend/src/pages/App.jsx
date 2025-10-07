@@ -1,6 +1,7 @@
 // Em: frontend/src/pages/App.jsx
 import React, { useState, useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
 
 import ProtectedRoute from "../guards/ProtectedRoute";
 import Login from "./Login";
@@ -108,6 +109,12 @@ useEffect(() => {
 
   return (
     <>
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          style: { fontSize: "0.95rem" },
+        }}
+      />
       {/* Banner de consentimento do Drive */}
       {needsDriveConsent && (
         <div className="my-4 p-3 rounded-md border border-yellow-400 bg-yellow-50 text-yellow-800">
