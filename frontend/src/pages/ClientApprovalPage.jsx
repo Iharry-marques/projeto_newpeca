@@ -354,9 +354,9 @@ const ClientApprovalPage = () => {
     return { valid: true };
   };
 
-    const handleSubmit = async () => {
-        const validation = validateSubmission();
-        if (!validation.valid) {
+  const handleSubmit = async () => {
+    const validation = validateSubmission();
+    if (!validation.valid) {
       toast.error(validation.message);
       return;
     }
@@ -367,7 +367,7 @@ const ClientApprovalPage = () => {
       const pieces = Object.entries(validations).map(([pieceId, validation]) => ({
         id: parseInt(pieceId),
         status: validation.status,
-        comment: validation.comment
+        comment: validation.comment,
       }));
 
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/approval/campaigns/review/${hash}/submit`, {
@@ -384,7 +384,9 @@ const ClientApprovalPage = () => {
 
       const result = await response.json();
 
-      toast.success(`Aprovação registrada! Aprovadas: ${result.stats.approved} · Ajustes: ${result.stats.needsAdjustment} · Críticos: ${result.stats.criticalPoints}`);
+      toast.success(
+        `Aprovação registrada! Aprovadas: ${result.stats.approved} · Ajustes: ${result.stats.needsAdjustment} · Críticos: ${result.stats.criticalPoints}`
+      );
       navigate('/client/success');
     } catch (err) {
       toast.error('Erro ao enviar aprovação: ' + err.message);

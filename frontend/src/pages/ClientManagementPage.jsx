@@ -236,15 +236,15 @@ const ClientManagementPage = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       {/* Header */}
       <header className="bg-white shadow-xl border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-6">
-              <img src={aprobiLogo} alt="Aprobi Logo" className="w-32 h-auto" />
-              <div className="border-l border-slate-300 pl-6">
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start sm:items-center gap-4 sm:gap-6">
+              <img src={aprobiLogo} alt="Aprobi Logo" className="w-24 sm:w-28 md:w-32 h-auto" />
+              <div className="sm:border-l sm:border-slate-300 sm:pl-6">
+                <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
                   Gerenciamento de Clientes
                 </h1>
-                <p className="text-lg text-slate-600 font-medium">
+                <p className="text-base sm:text-lg text-slate-600 font-medium">
                   Cadastre e gerencie seus clientes
                 </p>
               </div>
@@ -252,7 +252,7 @@ const ClientManagementPage = () => {
             
             <button
               onClick={() => handleOpenModal()}
-              className="flex items-center px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl hover:shadow-lg transform hover:scale-105 transition-all"
+              className="self-start sm:self-auto flex items-center px-5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl hover:shadow-lg transform hover:scale-105 transition-all"
             >
               <Plus className="w-5 h-5 mr-2" />
               Novo Cliente
@@ -261,7 +261,7 @@ const ClientManagementPage = () => {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-12">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
         {/* Filtros e Busca */}
         <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200 mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -320,17 +320,17 @@ const ClientManagementPage = () => {
               <table className="w-full">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    <th className="text-left p-6 text-sm font-semibold text-slate-700">Cliente</th>
-                    <th className="text-left p-6 text-sm font-semibold text-slate-700">Empresa</th>
-                    <th className="text-left p-6 text-sm font-semibold text-slate-700">Status</th>
-                    <th className="text-left p-6 text-sm font-semibold text-slate-700">Cadastrado em</th>
-                    <th className="text-center p-6 text-sm font-semibold text-slate-700">Ações</th>
+                    <th className="text-left px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Cliente</th>
+                    <th className="text-left px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Empresa</th>
+                    <th className="text-left px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Status</th>
+                    <th className="text-left px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Cadastrado em</th>
+                    <th className="text-center px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredClients.map((client) => (
                     <tr key={client.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                      <td className="p-6">
+                      <td className="px-4 sm:px-6 py-4">
                         <div>
                           <div className="font-semibold text-slate-800">{client.name}</div>
                           <div className="text-sm text-slate-600 flex items-center mt-1">
@@ -340,7 +340,7 @@ const ClientManagementPage = () => {
                         </div>
                       </td>
                       
-                      <td className="p-6">
+                      <td className="px-4 sm:px-6 py-4">
                         {client.company ? (
                           <div className="flex items-center text-slate-700">
                             <Building className="w-4 h-4 mr-2 text-slate-500" />
@@ -351,7 +351,7 @@ const ClientManagementPage = () => {
                         )}
                       </td>
                       
-                      <td className="p-6">
+                      <td className="px-4 sm:px-6 py-4">
                         <button
                           onClick={() => handleToggleStatus(client.id, client.isActive)}
                           className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold transition-colors ${
@@ -374,15 +374,15 @@ const ClientManagementPage = () => {
                         </button>
                       </td>
                       
-                      <td className="p-6 text-slate-600">
+                      <td className="px-4 sm:px-6 py-4 text-slate-600">
                         <div className="flex items-center">
                           <Calendar className="w-4 h-4 mr-2" />
                           {formatDate(client.createdAt)}
                         </div>
                       </td>
                       
-                      <td className="p-6">
-                        <div className="flex items-center justify-center space-x-2">
+                      <td className="px-4 sm:px-6 py-4">
+                        <div className="flex items-center justify-center space-x-2 sm:space-x-3">
                           <button
                             onClick={() => handleViewCampaigns(client.id)}
                             className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"

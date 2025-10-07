@@ -1,7 +1,7 @@
 // Em: frontend/src/pages/HomePage.jsx (VERSÃO CORRIGIDA COM LAYOUT MASTER-DETAIL)
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
-import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, PlusCircle, FolderPlus, Trash2, Pencil, FileText, HelpCircle, ChevronsRight } from "lucide-react";
+import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, PlusCircle, FolderPlus, Trash2, Pencil, FileText, HelpCircle, ChevronsRight, Menu } from "lucide-react";
 import toast from "react-hot-toast";
 import { DndContext, closestCorners, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
@@ -285,6 +285,7 @@ const HomePage = ({ googleAccessToken }) => {
     const [isLoadingCreativeLines, setIsLoadingCreativeLines] = useState(false);
     
     const [isCampaignModalOpen, setCampaignModalOpen] = useState(false);
+    const [isSidebarOpen, setSidebarOpen] = useState(false);
     const [newCreativeLineName, setNewCreativeLineName] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
     const [isHelpModalOpen, setHelpModalOpen] = useState(false);
@@ -847,28 +848,42 @@ const HomePage = ({ googleAccessToken }) => {
     };
 
     return (
-        <div className="h-screen w-screen bg-slate-100 flex flex-col antialiased">
-            <header className="bg-white shadow-sm border-b border-slate-200 flex-shrink-0 z-10">
-                <div className="max-w-full mx-auto px-6 h-24 flex items-center justify-between">
+        <div className="min-h-screen w-full bg-slate-100 flex flex-col antialiased">
+            <header className="bg-white shadow-sm border-b border-slate-200 flex-shrink-0 z-20">
+                <div className="max-w-full mx-auto px-4 sm:px-6 py-5 flex items-center justify-between">
                     <div className="flex items-center space-x-4">
-                        <img src={aprobiLogo} alt="Aprobi Logo" className="w-32 max-h-20 h-auto object-contain" />
+                        <button
+                            type="button"
+                            onClick={() => setSidebarOpen(true)}
+                            className="lg:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                            aria-label="Abrir menu de campanhas"
+                        >
+                            <Menu className="w-6 h-6" />
+                        </button>
+                        <img src={aprobiLogo} alt="Aprobi Logo" className="w-28 sm:w-32 max-h-20 h-auto object-contain" />
                     </div>
-                    <button onClick={() => setHelpModalOpen(true)} className="p-2 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors">
+                    <button
+                        onClick={() => setHelpModalOpen(true)}
+                        className="p-2 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                        aria-label="Abrir ajuda"
+                    >
                         <HelpCircle className="w-6 h-6" />
                     </button>
                 </div>
             </header>
             
-            <div className="flex-grow flex overflow-hidden">
+            <div className="flex flex-1 overflow-hidden relative">
                 <CampaignSidebar 
                     campaigns={campaigns}
                     selectedCampaignId={selectedCampaignId}
                     onCampaignChange={setSelectedCampaignId}
                     onOpenNewCampaignModal={() => setCampaignModalOpen(true)}
                     isLoading={isLoadingCampaigns}
+                    isMobileOpen={isSidebarOpen}
+                    onCloseMobile={() => setSidebarOpen(false)}
                 />
 
-                <main className="flex-1 overflow-y-auto p-8">
+                <main className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6">
                     {!selectedCampaign ? (
                          <div className="flex flex-col items-center justify-center h-full text-center text-slate-500">
                              <ChevronsRight className="w-16 h-16 text-slate-300 mb-4" />
