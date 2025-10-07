@@ -9,6 +9,7 @@ const multer = require('multer');
 const { Op } = require('sequelize');
 const PptxGenJS = require('pptxgenjs');
 const fetch = require('node-fetch');
+const mime = require('mime-types');
 const { Campaign, CreativeLine, Piece, Client } = require('../models');
 const { ensureAuth } = require('../auth');
 const {
@@ -44,6 +45,26 @@ const handleUpload = (req, res, next) => {
     next();
   });
 };
+
+const VIDEO_COVER_DATA_URI = (() => {
+  const fileNames = ['capa_video.png', 'capa_video.jpg', 'capa_video.jpeg', 'capa_video.webp'];
+  const searchDirs = [
+    path.join(__dirname, '../assets'),
+    path.join(__dirname, '../../frontend/src/assets'),
+  ];
+
+  for (const dir of searchDirs) {
+    for (const name of fileNames) {
+      const fullPath = path.join(dir, name);
+      if (fs.existsSync(fullPath)) {
+        const mimeType = mime.lookup(fullPath) || 'image/png';
+        const base64 = fs.readFileSync(fullPath).toString('base64');
+        return `data:${mimeType};base64,${base64}`;
+      }
+    }
+  }
+  return null;
+})();
 
 function safeFilename(name) {
   return String(name || '').replace(/[^\w.\-() ]/g, '_').slice(0, 200);
@@ -113,6 +134,8 @@ async function getFileData(piece, accessToken) {
         resolvedMimetype = downscaled.mimetype || resolvedMimetype;
       }
 
+      let cover = null;
+
       if ((resolvedMimetype || '').startsWith('video/')) {
         const compressed = await compressVideoIfNeeded(
           normalizedBuffer,
@@ -125,6 +148,9 @@ async function getFileData(piece, accessToken) {
         );
         normalizedBuffer = compressed.buffer || normalizedBuffer;
         resolvedMimetype = compressed.mimetype || resolvedMimetype;
+        if (VIDEO_COVER_DATA_URI) {
+          cover = VIDEO_COVER_DATA_URI;
+        }
       }
 
       const mediaSizeBytes = normalizedBuffer.byteLength || normalizedBuffer.length || 0;
@@ -149,6 +175,7 @@ async function getFileData(piece, accessToken) {
         mimetype: resolvedMimetype,
         width: dimensions?.width || null,
         height: dimensions?.height || null,
+        cover,
       };
     }
     return null;
@@ -450,6 +477,7 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
                 y: 0.5 + (area.h - mediaDims.h) / 2, // Centraliza verticalmente
                 w: mediaDims.w,
                 h: mediaDims.h,
+                cover: fileData.cover || undefined,
               };
 
               if (isImage) {
