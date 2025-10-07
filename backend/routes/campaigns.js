@@ -9,11 +9,9 @@ const multer = require('multer');
 const { Op } = require('sequelize');
 const PptxGenJS = require('pptxgenjs');
 const fetch = require('node-fetch');
-const imageSize = require('image-size'); // Importa a biblioteca para ler dimensões
-
 const { Campaign, CreativeLine, Piece, Client } = require('../models');
 const { ensureAuth } = require('../auth');
-const { convertRawImageIfNeeded } = require('../utils/media');
+const { convertRawImageIfNeeded, getMediaDimensions } = require('../utils/media');
 
 // --- Configuração e Funções Auxiliares ---
 const uploadDir = path.join(__dirname, '../uploads');
@@ -75,18 +73,26 @@ async function getFileData(piece, accessToken) {
     }
 
     if (fileBuffer) {
-      const { buffer: normalizedBuffer, mimetype } = await convertRawImageIfNeeded(fileBuffer, {
+      const conversion = await convertRawImageIfNeeded(fileBuffer, {
         mimetype: piece.mimetype,
         originalName: piece.originalName,
         filename: piece.filename,
       });
 
-      const resolvedMimetype = mimetype || piece.mimetype;
+      const normalizedBuffer = conversion.buffer || fileBuffer;
+      const resolvedMimetype = conversion.mimetype || piece.mimetype;
+      const dimensions = await getMediaDimensions(normalizedBuffer, {
+        mimetype: resolvedMimetype,
+        originalName: piece.originalName,
+        filename: piece.filename,
+      });
 
       return {
         buffer: normalizedBuffer,
         base64: `data:${resolvedMimetype};base64,${normalizedBuffer.toString('base64')}`,
-        mimetype: resolvedMimetype
+        mimetype: resolvedMimetype,
+        width: dimensions?.width || null,
+        height: dimensions?.height || null,
       };
     }
     return null;
@@ -353,25 +359,18 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
             const fileData = await getFileData(piece, userAccessToken);
             if (fileData) {
               const area = { w: 6.0, h: 4.5 };
-              let mediaDims = { w: area.w, h: area.h }; // Default to area size
+              let mediaDims = { w: area.w, h: area.h }; // Default to área inteira
 
-              // Calcula as dimensões corretas mantendo a proporção
-              if (isImage) {
-                try {
-                  const dims = imageSize(fileData.buffer);
-                  const areaRatio = area.w / area.h;
-                  const mediaRatio = dims.width / dims.height;
+              if (fileData.width && fileData.height) {
+                const areaRatio = area.w / area.h;
+                const mediaRatio = fileData.width / fileData.height;
 
-                  if (mediaRatio > areaRatio) { // Mídia mais larga que a área
-                    mediaDims.h = area.w / mediaRatio;
-                  } else { // Mídia mais alta ou na mesma proporção
-                    mediaDims.w = area.h * mediaRatio;
-                  }
-                } catch (e) {
-                  console.error(`Não foi possível ler as dimensões de ${piece.originalName}, usando tamanho padrão.`);
+                if (mediaRatio > areaRatio) {
+                  mediaDims.h = area.w / mediaRatio;
+                } else {
+                  mediaDims.w = area.h * mediaRatio;
                 }
               }
-              // Para vídeos, o pptxgenjs faz um bom trabalho com 'contain', então não precisamos do cálculo manual.
 
               const mediaOptions = {
                 data: fileData.base64,

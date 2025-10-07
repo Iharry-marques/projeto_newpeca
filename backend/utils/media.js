@@ -1,4 +1,12 @@
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const { v4: uuidv4 } = require('uuid');
+const mime = require('mime-types');
+const imageSize = require('image-size');
+const { path: ffprobePath } = require('@ffprobe-installer/ffprobe');
 let sharp;
 
 try {
@@ -64,7 +72,79 @@ async function convertRawImageIfNeeded(buffer, { mimetype, originalName, filenam
   }
 }
 
+function guessExtension(mimetype, filename) {
+  const extFromMime = mimetype ? mime.extension(mimetype) : null;
+  if (extFromMime) return `.${extFromMime}`;
+  if (filename) {
+    const ext = path.extname(filename);
+    if (ext) return ext;
+  }
+  return '.bin';
+}
+
+async function getVideoDimensions(buffer, { mimetype, originalName, filename } = {}) {
+  if (!buffer || !Buffer.isBuffer(buffer) || !ffprobePath) return null;
+
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ffprobe-'));
+  const tempFile = path.join(tmpDir, `${uuidv4()}${guessExtension(mimetype, originalName || filename)}`);
+
+  try {
+    await fs.promises.writeFile(tempFile, buffer);
+    const execFileAsync = promisify(execFile);
+    const args = [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=width,height',
+      '-of',
+      'json',
+      tempFile,
+    ];
+    const { stdout } = await execFileAsync(ffprobePath, args);
+    const parsed = JSON.parse(stdout);
+    const stream = parsed?.streams?.[0];
+    if (stream?.width && stream?.height) {
+      return { width: Number(stream.width), height: Number(stream.height) };
+    }
+  } catch (error) {
+    console.warn(`[media] Falha ao ler dimensões do vídeo (${originalName || filename || mimetype || 'desconhecido'}): ${error.message}`);
+  } finally {
+    await fs.promises.rm(tempFile, { force: true }).catch(() => {});
+    await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+  return null;
+}
+
+function getImageDimensions(buffer, { originalName, filename, mimetype } = {}) {
+  try {
+    const dims = imageSize(buffer);
+    if (dims?.width && dims?.height) {
+      return { width: Number(dims.width), height: Number(dims.height), type: dims.type || mimetype };
+    }
+  } catch (error) {
+    console.warn(`[media] Falha ao detectar dimensões da imagem (${originalName || filename || mimetype || 'desconhecido'}): ${error.message}`);
+  }
+  return null;
+}
+
+async function getMediaDimensions(buffer, { mimetype, originalName, filename } = {}) {
+  if (!buffer || !Buffer.isBuffer(buffer)) return null;
+
+  if ((mimetype || '').startsWith('image/')) {
+    return getImageDimensions(buffer, { mimetype, originalName, filename });
+  }
+
+  if ((mimetype || '').startsWith('video/')) {
+    return getVideoDimensions(buffer, { mimetype, originalName, filename });
+  }
+
+  return null;
+}
+
 module.exports = {
   isRawImage,
   convertRawImageIfNeeded,
+  getMediaDimensions,
 };
