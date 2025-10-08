@@ -1,4 +1,4 @@
-// Em: backend/auth.js
+// Em: backend/auth.js (VERSÃO CORRIGIDA E ROBUSTA)
 
 const express = require('express');
 const passport = require('passport');
@@ -21,112 +21,124 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-passport.use(new GoogleStrategy(
-  {
+passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     callbackURL: process.env.GOOGLE_CALLBACK_URL,
-    passReqToCallback: true,
   },
-  async (req, accessToken, refreshToken, profile, done) => {
+  async (accessToken, refreshToken, profile, done) => {
     try {
       const email = profile.emails?.[0]?.value;
-      if (!email) return done(new Error('Email não encontrado.'), null);
+      if (!email) {
+        return done(new Error('Email não encontrado no perfil do Google.'), null);
+      }
 
       const domain = email.split('@')[1];
       if (process.env.SUNO_DOMAIN && domain !== process.env.SUNO_DOMAIN) {
-        return done(null, false, { message: 'Domínio não autorizado' });
+        return done(null, false, { message: 'Domínio não autorizado.' });
       }
 
       const [user] = await User.findOrCreate({
         where: { username: email },
-        defaults: { password: 'provided_by_google' }
+        defaults: { password: 'provided_by_google' } // Senha placeholder
       });
 
-      // ➜ Passe os tokens pelo "info"
-      return done(null, user, { accessToken, refreshToken });
+      // Anexa os tokens ao objeto de usuário para serem capturados no callback
+      user.accessToken = accessToken;
+      user.refreshToken = refreshToken;
+
+      return done(null, user);
     } catch (err) {
       return done(err, null);
     }
   }
 ));
 
-
 // Middleware para garantir que o usuário está autenticado
 function ensureAuth(req, res, next) {
-  if (req.isAuthenticated && req.isAuthenticated()) return next();
-  res.status(401).json({ authenticated: false, error: 'Não autenticado' });
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.status(401).json({ authenticated: false, error: 'Não autenticado.' });
 }
 
 const googleAuthRouter = express.Router();
 
-// Rota de login padrão
+// Rota para iniciar o login e pedir consentimento do Drive
 googleAuthRouter.get(
-  '/auth/google/callback',
-  (req, res, next) => {
-    passport.authenticate('google', { failureRedirect: `${FRONTEND_URL}/login` }, 
-      (err, user, info) => {
-        if (err) return next(err);
-        if (!user) return res.redirect(`${FRONTEND_URL}/login`);
-
-        req.logIn(user, (err) => {
-          if (err) return next(err);
-
-          // Salva tokens na sessão AGORA (após login)
-          if (info?.accessToken) req.session.accessToken = info.accessToken;
-          if (info?.refreshToken) req.session.refreshToken = info.refreshToken;
-
-          req.session.save(() => res.redirect(FRONTEND_URL));
-        });
-      }
-    )(req, res, next);
-  }
-);
-
-
-// <-- MUDANÇA: NOVA ROTA para forçar o consentimento e garantir o refresh token
-// Use esta rota quando o usuário precisar (re)conectar o Google Drive
-googleAuthRouter.get(
-  '/auth/google/drive-consent',
+  '/auth/google',
   passport.authenticate('google', {
     scope: ['profile', 'email', DRIVE_SCOPE],
     accessType: 'offline',
-    prompt: 'consent', // Força a tela de permissão do Google
+    prompt: 'consent',
   })
 );
 
-googleAuthRouter.get('/auth/google', (req, res, next) => {
-  res.redirect('/auth/google/drive-consent');
-});
-
-
-// Rota de callback do Google (comum para ambas as autenticações)
+// Rota de callback do Google - TOTALMENTE REFEITA
 googleAuthRouter.get(
   '/auth/google/callback',
-  passport.authenticate('google', { failureRedirect: `${FRONTEND_URL}/login` }),
-  (req, res) => { 
-    // Redireciona para uma página específica ou para a home após o login
-    res.redirect(FRONTEND_URL); 
+  (req, res, next) => {
+    passport.authenticate('google', {
+      failureRedirect: `${FRONTEND_URL}/login?error=auth_failed`,
+      failureMessage: true
+    }, (err, user, info) => {
+      if (err) {
+        console.error("[AUTH_CALLBACK] Erro do Passport:", err);
+        return res.redirect(`${FRONTEND_URL}/login?error=internal_error`);
+      }
+      if (!user) {
+        console.warn("[AUTH_CALLBACK] Autenticação falhou, usuário não retornado. Mensagem:", info?.message);
+        return res.redirect(`${FRONTEND_URL}/login?error=access_denied`);
+      }
+
+      req.logIn(user, (loginErr) => {
+        if (loginErr) {
+          console.error("[AUTH_CALLBACK] Erro no req.logIn:", loginErr);
+          return next(loginErr);
+        }
+
+        // Salva os tokens na sessão de forma explícita
+        if (user.accessToken) {
+            req.session.accessToken = user.accessToken;
+        }
+        if (user.refreshToken) {
+            req.session.refreshToken = user.refreshToken;
+        }
+
+        // Garante que a sessão seja salva ANTES de redirecionar
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error("[AUTH_CALLBACK] Erro ao salvar a sessão:", saveErr);
+            return next(saveErr);
+          }
+          console.log("[AUTH_CALLBACK] Sessão salva com sucesso, redirecionando para o frontend.");
+          return res.redirect(FRONTEND_URL);
+        });
+      });
+    })(req, res, next);
   }
 );
+
 
 const meRouter = express.Router();
 
 // Rota para verificar o status da autenticação
 meRouter.get('/', (req, res) => {
-  if (req.user && req.isAuthenticated()) {
+  if (req.isAuthenticated() && req.user) {
     res.json({ authenticated: true, user: req.user });
   } else {
+    // Retorna 401 se não estiver autenticado
     res.status(401).json({ authenticated: false, user: null });
   }
 });
 
-// <-- MUDANÇA: Rota /me/token atualizada e mais segura
-// O frontend chamará esta rota para obter o token antes de fazer chamadas à API do Drive
+// Rota para obter o token de acesso do Drive
 meRouter.get('/token', ensureAuth, (req, res) => {
   const token = req.session?.accessToken;
-  if (token) return res.json({ accessToken: token });
-  return res.status(401).json({ error: 'Token de acesso não encontrado na sessão.' });
+  if (token) {
+    return res.json({ accessToken: token });
+  }
+  return res.status(401).json({ error: 'Token de acesso do Drive não encontrado na sessão.' });
 });
 
 module.exports = { googleAuthRouter, ensureAuth, meRouter, passport };
