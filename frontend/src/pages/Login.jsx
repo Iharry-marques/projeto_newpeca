@@ -3,15 +3,15 @@
 import React from 'react';
 import aprobiLogo from '../assets/aprobi-logo.jpg';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+// Esta variável agora aponta para a URL real do backend, lida do .env de produção
+const GOOGLE_AUTH_URL = `${import.meta.env.VITE_BACKEND_URL}/auth/google`;
 
 export default function LoginPage() {
   const handleLogin = () => {
-    // Apenas redireciona para o fluxo de autenticação do Google no backend
-    window.location.href = `${BACKEND_URL}/auth/google`;
+    // A mágica está aqui: redireciona para a URL COMPLETA do backend, não para o /api
+    window.location.href = GOOGLE_AUTH_URL;
   };
 
-  // Este componente agora apenas renderiza a UI de login, sem lógicas complexas.
   return (
     <div
       style={{
