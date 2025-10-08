@@ -6,7 +6,7 @@ const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
 const SQLiteStoreFactory = require("connect-sqlite3")(session);
-const RedisStore = require("connect-redis");
+const { RedisStore } = require("connect-redis");
 const { createClient } = require("redis");
 const bodyParser = require("body-parser");
 const creativeLineRoutes = require('./routes/creativeLines');
@@ -38,8 +38,7 @@ async function createSessionStore() {
       });
       await redisClient.connect();
       console.log("[SESSION] Conectado ao Redis.");
-      const RedisStoreFactory = RedisStore(session);
-      return new RedisStoreFactory({
+      return new RedisStore({
         client: redisClient,
         prefix: 'sess:',
       });
