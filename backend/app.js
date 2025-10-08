@@ -38,7 +38,8 @@ async function createSessionStore() {
       });
       await redisClient.connect();
       console.log("[SESSION] Conectado ao Redis.");
-      return new RedisStore({
+      const RedisStoreFactory = RedisStore(session);
+      return new RedisStoreFactory({
         client: redisClient,
         prefix: 'sess:',
       });
