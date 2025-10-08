@@ -1,4 +1,4 @@
-// Em: backend/app.js (VERSÃO FINAL E CORRIGIDA)
+// Em: backend/app.js (VERSÃO FINAL PARA USAR COM PROXY NO RENDER)
 
 require("dotenv").config();
 
@@ -9,13 +9,13 @@ const SQLiteStoreFactory = require("connect-sqlite3")(session);
 const RedisStore = require("connect-redis").default;
 const { createClient } = require("redis");
 const bodyParser = require("body-parser");
-const creativeLineRoutes = require('./routes/creativeLines');
-const pieceRoutes = require('./routes/pieces');
+const creativeLineRoutes = require("./routes/creativeLines");
+const pieceRoutes = require("./routes/pieces");
 
 // Importações dos Módulos do Projeto
 const { googleAuthRouter, ensureAuth, meRouter, passport } = require("./auth");
 const campaignRoutes = require("./routes/campaigns");
-const filesRoutes = require("./routes/files"); // <-- 1. Importa a nova rota
+const filesRoutes = require("./routes/files");
 const clientManagementRoutes = require("./routes/clientManagement");
 const clientAuthRoutes = require("./routes/clientAuth");
 const approvalRoutes = require("./routes/approval");
@@ -24,26 +24,26 @@ const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
-const forceSameSiteNone = process.env.COOKIE_SAMESITE_NONE === 'true';
-const forceSecureCookie = process.env.COOKIE_FORCE_SECURE === 'true';
-const forcePartitionedCookie = process.env.COOKIE_PARTITIONED === 'true';
 const redisUrl = process.env.REDIS_URL;
 
 async function createSessionStore() {
-  if (redisUrl) {
+  if (redisUrl && isProduction) { // Apenas tenta usar Redis em produção
     try {
       const redisClient = createClient({ url: redisUrl });
-      redisClient.on('error', (err) => {
+      redisClient.on("error", (err) => {
         console.error("[SESSION] Erro no Redis:", err);
       });
       await redisClient.connect();
       console.log("[SESSION] Conectado ao Redis.");
       return new RedisStore({
         client: redisClient,
-        prefix: 'sess:',
+        prefix: "sess:",
       });
     } catch (error) {
-      console.error("[SESSION] Falha ao conectar no Redis. Voltando para SQLite:", error);
+      console.error(
+        "[SESSION] Falha ao conectar no Redis. Voltando para SQLite:",
+        error
+      );
     }
   }
 
@@ -54,6 +54,7 @@ async function createSessionStore() {
   });
 }
 
+// Para o Express confiar no proxy reverso do Render
 app.set("trust proxy", 1);
 
 app.use(
@@ -88,33 +89,14 @@ async function start() {
       secret: process.env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
-      cookie: (() => {
-        const secureCookie = isProduction || forceSecureCookie;
-        const cookieConfig = {
-          secure: secureCookie,
-          httpOnly: true,
-          maxAge: 24 * 60 * 60 * 1000,
-        };
-
-        const shouldUseSameSiteNone = (isProduction || forceSameSiteNone) && secureCookie;
-        cookieConfig.sameSite = shouldUseSameSiteNone ? 'none' : 'lax';
-
-        if (shouldUseSameSiteNone && forcePartitionedCookie) {
-          cookieConfig.partitioned = true;
-        }
-
-        return cookieConfig;
-      })(),
+      cookie: {
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000, // 24 horas
+        secure: isProduction, // true em produção (HTTPS), false em desenvolvimento (HTTP)
+        sameSite: 'lax', // 'lax' é suficiente e mais seguro agora que é 'same-site'
+      },
     })
   );
-
-  app.get("/debug/session", (req, res) => {
-    res.json({
-      user: req.user ? req.user.username : null,
-      hasAccessToken: !!(req.session && req.session.accessToken),
-      sessionKeys: req.session ? Object.keys(req.session) : [],
-    });
-  });
 
   app.use(passport.initialize());
   app.use(passport.session());
@@ -123,40 +105,12 @@ async function start() {
   app.use(googleAuthRouter);
   app.use("/me", meRouter);
   app.use("/client-auth", clientAuthRoutes.router);
-  app.use('/creative-lines', ensureAuth, creativeLineRoutes); // Protegida
-  app.use('/pieces', ensureAuth, pieceRoutes); // Protegida
-
-  // <-- 2. Rota PÚBLICA para servir arquivos (usada na pré-visualização e PPTX)
-  app.use('/campaigns', filesRoutes);
-
-  // <-- 3. Rotas PROTEGIDAS para gerenciar campanhas
+  app.use("/creative-lines", ensureAuth, creativeLineRoutes);
+  app.use("/pieces", ensureAuth, pieceRoutes);
+  app.use("/campaigns", filesRoutes);
   app.use("/campaigns", ensureAuth, campaignRoutes);
   app.use("/clients", ensureAuth, clientManagementRoutes);
-  app.use("/approval", approvalRoutes); // As rotas internas de approval já têm sua própria proteção
-
-  app.get("/__routes", (req, res) => {
-    const out = [];
-    app._router.stack.forEach((m) => {
-      if (m.route?.path)
-        out.push(
-          `[APP] ${Object.keys(m.route.methods).join(",").toUpperCase()} ${
-            m.route.path
-          }`
-        );
-      if (m.name === "router" && m.handle?.stack) {
-        m.handle.stack.forEach((r) => {
-          if (r.route?.path)
-            out.push(
-              `[ROUTER] ${Object.keys(r.route.methods).join(",").toUpperCase()} ${
-                r.route.path
-              }`
-            );
-        });
-      }
-    });
-    res.type("text/plain").send(out.sort().join("\n"));
-  });
-
+  app.use("/approval", approvalRoutes);
   app.use(errorHandler);
 
   await start();
