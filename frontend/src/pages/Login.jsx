@@ -8,7 +8,7 @@ const GOOGLE_AUTH_URL = `${import.meta.env.VITE_BACKEND_URL}/auth/google`;
 
 export default function LoginPage() {
   const handleLogin = () => {
-    // A mágica está aqui: redireciona para a URL COMPLETA do backend, não para o /api
+    // Redireciona o navegador para a URL COMPLETA do backend para iniciar o login
     window.location.href = GOOGLE_AUTH_URL;
   };
 
