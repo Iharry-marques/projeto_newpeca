@@ -1,5 +1,6 @@
 // Em: frontend/src/hooks/useMe.js (VERSÃO FINAL CORRIGIDA)
 import { useEffect, useState } from 'react';
+import api from '../api/client';
 
 export function useMe() {
   const [data, setData] = useState({
@@ -13,22 +14,27 @@ export function useMe() {
     let cancelled = false;
     (async () => {
       try {
-        // *** MUDANÇA CRUCIAL AQUI ***
-        // Usamos o caminho relativo /api/me, que será capturado pelo proxy do Render
-        const res = await fetch('/api/me', {
-          credentials: 'include'
-        });
-
-        if (!res.ok) {
-          if (!cancelled) setData({ loading: false, authenticated: false, user: null, error: null });
+        const res = await api.get('/me');
+        if (!cancelled) {
+          setData({
+            loading: false,
+            authenticated: res.data.authenticated,
+            user: res.data.user,
+            error: null,
+          });
+        }
+      } catch (err) {
+        if (cancelled) return;
+        if (err?.response?.status === 401) {
+          setData({ loading: false, authenticated: false, user: null, error: null });
           return;
         }
-
-        const json = await res.json();
-
-        if (!cancelled) setData({ loading: false, authenticated: json.authenticated, user: json.user, error: null });
-      } catch (e) {
-        if (!cancelled) setData({ loading: false, authenticated: false, user: null, error: String(e) });
+        setData({
+          loading: false,
+          authenticated: false,
+          user: null,
+          error: err?.message ?? String(err),
+        });
       }
     })();
 
