@@ -93,7 +93,7 @@ async function start() {
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000, // 24 horas
         secure: isProduction, // true em produção (HTTPS), false em desenvolvimento (HTTP)
-        sameSite: 'lax', // 'lax' é suficiente e mais seguro agora que é 'same-site'
+        sameSite: isProduction ? 'none' : 'lax', // permite envio cross-site no Render
       },
     })
   );
