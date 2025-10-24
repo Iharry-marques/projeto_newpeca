@@ -42,13 +42,24 @@ router.delete('/', ensureAuth, async (req, res, next) => {
   }
 });
 
-// ROTA PARA ATUALIZAR NOME DA PEÇA
+// ROTA PARA ATUALIZAR CAMPOS DA PEÇA (nome, comentário, etc.)
 router.put('/:id', ensureAuth, async (req, res, next) => {
   try {
-    const { originalName } = req.body;
-    const trimmedName = String(originalName ?? '').trim();
-    if (!trimmedName) {
-      return res.status(400).json({ error: 'O nome da peça não pode ser vazio.' });
+    const { originalName, comment } = req.body;
+
+    const isUpdatingName = originalName !== undefined;
+    const isUpdatingComment = comment !== undefined;
+
+    if (!isUpdatingName && !isUpdatingComment) {
+      return res.status(400).json({ error: 'Nenhum campo válido foi enviado para atualização.' });
+    }
+
+    let trimmedName;
+    if (isUpdatingName) {
+      trimmedName = String(originalName ?? '').trim();
+      if (!trimmedName) {
+        return res.status(400).json({ error: 'O nome da peça não pode ser vazio.' });
+      }
     }
 
     const piece = await Piece.findByPk(req.params.id, {
@@ -71,7 +82,14 @@ router.put('/:id', ensureAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Acesso negado para editar esta peça.' });
     }
 
-    piece.originalName = trimmedName;
+    if (isUpdatingName) {
+      piece.originalName = trimmedName;
+    }
+
+    if (isUpdatingComment) {
+      piece.comment = comment;
+    }
+
     await piece.save();
 
     res.status(200).json(piece);

@@ -1,7 +1,7 @@
 // Em: frontend/src/pages/Login.jsx (VERSÃO CORRIGIDA)
 
 import React from 'react';
-import aprobiLogo from '../assets/aprobi-logo.jpg';
+import aprobiLogo from '../assets/aprobi-logo-beta.svg';
 
 // Esta variável agora aponta para a URL real do backend, lida do .env de produção
 const GOOGLE_AUTH_URL = `${import.meta.env.VITE_BACKEND_URL}/auth/google`;
