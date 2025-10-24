@@ -1,4 +1,4 @@
-// Em: frontend/src/pages/HomePage.jsx (VERSÃO CORRIGIDA COM LAYOUT MASTER-DETAIL)
+// Em: frontend/src/pages/HomePage.jsx (VERSÃO FINAL E CORRIGIDA)
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, PlusCircle, FolderPlus, Trash2, Pencil, FileText, HelpCircle, ChevronsRight, Menu, Loader2 } from "lucide-react";
@@ -9,19 +9,11 @@ import { CSS } from "@dnd-kit/utilities";
 
 import aprobiLogo from "../assets/aprobi-logo.jpg";
 import DriveImportButton from "../components/DriveImportButton";
-import CampaignSidebar from "../components/CampaignSidebar"; // Novo Componente
-import HelpModal from "../components/HelpModal"; // Novo Componente
-
-const CLIENT_OPTIONS = [
-    { name: "AMERICANAS" }, { name: "ARAMIS" }, { name: "CANTU" }, { name: "COGNA" },
-    { name: "ESPORTE DA SORTE" }, { name: "HASDEX" }, { name: "HORTIFRUTI NATURAL DA TERRA" },
-    { name: "IDEAZARVOS" }, { name: "KEETA" }, { name: "MASTERCARD" }, { name: "O BOTICARIO" },
-    { name: "RD" }, { name: "SAMSUNG" }, { name: "SAMSUNG E STORE" }, { name: "SICREDI" }, { name: "VIVO" },
-].sort((a, b) => a.name.localeCompare(b.name));
+import CampaignSidebar from "../components/CampaignSidebar";
+import HelpModal from "../components/HelpModal";
+import ClientSelectionModal from "../components/ClientSelectionModal";
 
 // =================== COMPONENTES INTERNOS ===================
-// Manter os componentes de Modal e Viewer aqui para evitar erros de escopo
-// =============================================================
 
 const FileTypeIcon = ({ fileType }) => {
     if ((fileType || "").startsWith("image/")) return <ImageIcon className="w-5 h-5 text-blue-500" />;
@@ -229,7 +221,7 @@ const SortablePiece = ({
     );
 };
 
-const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
+const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated, clients = [] }) => {
     const [name, setName] = useState("");
     const [selectedClient, setSelectedClient] = useState("");
     const [error, setError] = useState("");
@@ -263,9 +255,9 @@ const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
                         <div><label htmlFor="campaignName" className="block text-sm font-semibold text-slate-700 mb-2">Nome da Campanha *</label><input type="text" id="campaignName" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none" required /></div>
                         <div>
                            <label className="block text-sm font-semibold text-slate-700 mb-2">Cliente *</label>
-                           <select value={selectedClient} onChange={e => setSelectedClient(e.target.value)} className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none bg-no-repeat bg-right pr-8" style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1.5em 1.5em' }}>
+                           <select value={selectedClient} onChange={e => setSelectedClient(e.target.value)} className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none bg-no-repeat bg-right pr-8" style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")` }}>
                                 <option value="" disabled>Selecione um cliente</option>
-                                {CLIENT_OPTIONS.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                                {clients.map(c => <option key={c.id} value={c.company || c.name}>{c.company || c.name}</option>)}
                            </select>
                         </div>
                     </div>
@@ -284,6 +276,8 @@ const HomePage = ({ googleAccessToken }) => {
     const [creativeLines, setCreativeLines] = useState([]);
     const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(true);
     const [isLoadingCreativeLines, setIsLoadingCreativeLines] = useState(false);
+    const [clientList, setClientList] = useState([]);
+    const [isLoadingClients, setIsLoadingClients] = useState(true);
     
     const [isCampaignModalOpen, setCampaignModalOpen] = useState(false);
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -310,12 +304,30 @@ const HomePage = ({ googleAccessToken }) => {
     const [pieceNameDraft, setPieceNameDraft] = useState('');
     const [isSavingPieceName, setIsSavingPieceName] = useState(false);
     const [isExportingPpt, setIsExportingPpt] = useState(false);
+    const [isClientSelectionModalOpen, setClientSelectionModalOpen] = useState(false);
 
     const sensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
         useSensor(TouchSensor, { pressDelay: 150, activationConstraint: { distance: 6 } })
     );
     
+    useEffect(() => {
+        const fetchClients = async () => {
+          try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/clients`, { credentials: "include" });
+            if (!res.ok) throw new Error("Falha ao buscar clientes.");
+            const data = await res.json();
+            setClientList(data.filter(client => client.isActive));
+          } catch (error) {
+            toast.error(error.message);
+          } finally {
+            setIsLoadingClients(false);
+          }
+        };
+
+        fetchClients();
+    }, []);
+
     const fetchCampaigns = useCallback(async () => {
         setIsLoadingCampaigns(true);
         try {
@@ -395,6 +407,32 @@ const HomePage = ({ googleAccessToken }) => {
         setCampaigns((prev) => [newCampaign, ...prev]);
         setSelectedCampaignId(newCampaign.id);
         toast.success(`Campanha "${newCampaign.name}" criada!`);
+    };
+
+    const handleAssignClients = async (clientIds) => {
+        if (!selectedCampaignId || clientIds.length === 0) return;
+
+        const loadingToast = toast.loading(`Enviando para ${clientIds.length} cliente(s)...`);
+
+        try {
+            for (const clientId of clientIds) {
+                const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/clients/assign-campaign`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({ campaignId: selectedCampaignId, clientId }),
+                });
+
+                if (!res.ok) {
+                    throw new Error(`Falha ao atribuir cliente ID: ${clientId}`);
+                }
+            }
+
+            toast.success("Campanha enviada para aprovação com sucesso!", { id: loadingToast });
+            setClientSelectionModalOpen(false);
+        } catch (error) {
+            toast.error(error.message || "Não foi possível enviar a campanha para os clientes selecionados.", { id: loadingToast });
+        }
     };
     
     const handleCreateCreativeLine = async (e) => {
@@ -960,8 +998,8 @@ const HomePage = ({ googleAccessToken }) => {
                                                     <label className="block text-sm font-semibold text-slate-600 mb-2">Cliente</label>
                                                     <select value={campaignDraft.client} onChange={(e) => setCampaignDraft((prev) => ({ ...prev, client: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none bg-no-repeat bg-right pr-8" style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1.5em 1.5em' }}>
                                                         <option value="" disabled>Selecione um cliente</option>
-                                                        {CLIENT_OPTIONS.map(c => (
-                                                            <option key={c.name} value={c.name}>{c.name}</option>
+                                                        {clientList.map(c => (
+                                                            <option key={c.id} value={c.company || c.name}>{c.company || c.name}</option>
                                                         ))}
                                                     </select>
                                                 </div>
@@ -1034,9 +1072,18 @@ const HomePage = ({ googleAccessToken }) => {
                                                 </button>
                                             </>
                                         ) : (
-                                            <button type="button" onClick={handleToggleSelectionMode} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:text-slate-800 hover:border-slate-400 transition-colors" disabled={totalPieces === 0}>
-                                                Remover Peças
-                                            </button>
+                                            <>
+                                                <button type="button" onClick={handleToggleSelectionMode} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:text-slate-800 hover:border-slate-400 transition-colors" disabled={totalPieces === 0}>
+                                                    Remover Peças
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setClientSelectionModalOpen(true)}
+                                                    className="px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors"
+                                                >
+                                                    Enviar para Cliente
+                                                </button>
+                                            </>
                                         )}
                                     </div>
                                 </div>
@@ -1162,7 +1209,18 @@ const HomePage = ({ googleAccessToken }) => {
             />
             <FilePopup file={selectedFile} onClose={() => setSelectedFile(null)} />
             <HelpModal isOpen={isHelpModalOpen} onClose={() => setHelpModalOpen(false)} />
-            <NewCampaignModal isOpen={isCampaignModalOpen} onClose={() => setCampaignModalOpen(false)} onCampaignCreated={handleCampaignCreated} />
+            <NewCampaignModal
+                isOpen={isCampaignModalOpen}
+                onClose={() => setCampaignModalOpen(false)}
+                onCampaignCreated={handleCampaignCreated}
+                clients={clientList}
+            />
+            <ClientSelectionModal
+                isOpen={isClientSelectionModalOpen}
+                onClose={() => setClientSelectionModalOpen(false)}
+                onConfirm={handleAssignClients}
+                campaignName={selectedCampaign?.name || ""}
+            />
             {isExportingPpt && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-2xl px-8 py-6 flex flex-col items-center gap-3 text-center">

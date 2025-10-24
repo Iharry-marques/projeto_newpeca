@@ -1,14 +1,15 @@
-// Em: frontend/src/pages/Login.jsx (VERSÃO CORRIGIDA)
+// Em: frontend/src/pages/Login.jsx (VERSÃO ATUALIZADA COM AMBOS OS LOGINS)
 
 import React from 'react';
+import { Link } from 'react-router-dom'; // Adicionamos a importação do Link
 import aprobiLogo from '../assets/aprobi-logo.jpg';
 
-// Esta variável agora aponta para a URL real do backend, lida do .env de produção
+// Esta variável agora aponta para a URL real do backend
 const GOOGLE_AUTH_URL = `${import.meta.env.VITE_BACKEND_URL}/auth/google`;
 
 export default function LoginPage() {
   const handleLogin = () => {
-    // Redireciona o navegador para a URL COMPLETA do backend para iniciar o login
+    // Redireciona o navegador para a URL COMPLETA do backend para iniciar o login do Google
     window.location.href = GOOGLE_AUTH_URL;
   };
 
@@ -52,14 +53,15 @@ export default function LoginPage() {
         <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>
           Aprobi • Login
         </h1>
-        <p style={{ marginTop: 8, color: '#475569' }}>
-          Entre com sua conta Google Suno.
+        
+        {/* --- SEÇÃO PARA COLABORADORES SUNO --- */}
+        <p style={{ marginTop: 16, color: '#475569', fontSize: '0.9rem' }}>
+          Acesso para colaboradores Suno.
         </p>
-
         <button
           onClick={handleLogin}
           style={{
-            marginTop: 16,
+            marginTop: 8,
             width: '100%',
             height: 44,
             borderRadius: 10,
@@ -72,6 +74,31 @@ export default function LoginPage() {
         >
           Entrar com Google
         </button>
+
+        {/* --- DIVISOR (NOVO) --- */}
+        <div style={{ margin: '24px 0', border: 0, borderTop: '1px solid #e2e8f0' }} />
+
+        {/* --- SEÇÃO PARA CLIENTES (NOVA) --- */}
+        <p style={{ marginTop: 8, color: '#475569', fontSize: '0.9rem' }}>
+          Acesso exclusivo para clientes.
+        </p>
+        <Link to="/client/login">
+          <button
+            style={{
+              marginTop: 8,
+              width: '100%',
+              height: 44,
+              borderRadius: 10,
+              border: '1px solid #e2e8f0',
+              background: '#1e293b', // Cor escura para diferenciar
+              color: 'white',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Portal do Cliente
+          </button>
+        </Link>
       </div>
     </div>
   );

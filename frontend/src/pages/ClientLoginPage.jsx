@@ -15,7 +15,7 @@ const ClientLoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Redirecionar para onde o usuário tentou acessar originalmente
+  // Redirecionar para onde o usuário tentou acessar originalmente\
   const redirectTo = location.state?.from?.pathname || '/client/dashboard';
 
   const handleSubmit = async (e) => {

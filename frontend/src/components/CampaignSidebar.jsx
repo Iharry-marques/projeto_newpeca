@@ -1,5 +1,6 @@
 import React from 'react';
-import { PlusCircle, X } from 'lucide-react';
+import { PlusCircle, X, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const CampaignSidebar = ({
     campaigns,
@@ -24,6 +25,18 @@ const CampaignSidebar = ({
             <aside
                 className={`fixed inset-y-0 left-0 z-40 w-72 transform ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} ${baseAsideClasses} lg:w-80 lg:border-r lg:border-slate-200 lg:bg-white`}
             >
+                <div className="p-4 border-b border-slate-200">
+                    <Link to="/clients" className="w-full">
+                        <button
+                            type="button"
+                            onClick={onCloseMobile}
+                            className="w-full flex items-center justify-center px-4 py-2.5 bg-slate-700 text-white font-semibold rounded-lg hover:bg-slate-800 transition-all"
+                        >
+                            <Users className="w-5 h-5 mr-2" />
+                            Gerenciar Clientes
+                        </button>
+                    </Link>
+                </div>
                 <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-white">
                     <button
                         onClick={onOpenNewCampaignModal}
