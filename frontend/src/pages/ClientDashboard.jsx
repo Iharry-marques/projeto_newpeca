@@ -15,7 +15,7 @@ import {
   LogOut,
   Building
 } from 'lucide-react';
-import aprobiLogo from "../assets/aprobi-logo.jpg";
+import aprobiLogo from "../assets/aprobi-logo-beta.svg";
 
 const ClientDashboard = () => {
   const [campaigns, setCampaigns] = useState([]);

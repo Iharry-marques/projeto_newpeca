@@ -1,4 +1,4 @@
-// Em: backend/routes/campaigns.js (VERSÃO FINAL COM DIMENSIONAMENTO INTELIGENTE DE MÍDIA)
+// Em: backend/routes/campaigns.js (COM TEXTO DE APOIO NO PPTX)
 
 const express = require('express');
 const router = express.Router();
@@ -363,7 +363,7 @@ router.delete('/:id', ensureAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ================== ROTA DE EXPORTAÇÃO DE PPT (FINALÍSSIMA) ==================
+// ================== ROTA DE EXPORTAÇÃO DE PPT (COM TEXTO DE APOIO) ==================
 
 router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
   try {
@@ -376,7 +376,8 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
       where: { id: req.params.id, createdBy: req.user.id },
       include: [{
         model: CreativeLine, as: 'creativeLines', order: [['createdAt', 'ASC']],
-        include: [{ model: Piece, as: 'pieces', order: [['order', 'ASC'], ['createdAt', 'ASC']] }],
+        // Importante: Puxar o campo 'comment' do modelo Piece
+        include: [{ model: Piece, as: 'pieces', order: [['order', 'ASC'], ['createdAt', 'ASC']], attributes: { include: ['comment'] } }],
       }],
     });
 
@@ -422,18 +423,37 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
 
         for (const piece of line.pieces) {
           let slidePeca = pptx.addSlide({ masterName: 'MASTER_CONTENT_SPLIT' });
-          slidePeca.addText([
-            { text: 'Nome da Peça:', options: { fontFace: 'Montserrat', bold: true, breakLine: true } },
-            { text: piece.originalName, options: { fontFace: 'Montserrat', fontSize: 12, breakLine: true } },
-          ], {
-            x: 0.5,
-            y: 0.5,
-            w: 2.5,
-            h: 4.5,
-            align: 'left',
-            valign: 'top',
-            color: TEXT_DARK,
+
+          // --- INÍCIO DA ALTERAÇÃO ---
+          
+          // Prepara os textos que SEMPRE estarão presentes
+          const textElements = [
+            { text: 'Nome da Peça:', options: { fontFace: 'Montserrat', bold: true, fontSize: 14, color: TEXT_DARK, breakLine: true } },
+            { text: piece.originalName || piece.filename || 'Nome não definido', options: { fontFace: 'Montserrat', fontSize: 11, color: TEXT_DARK, breakLine: true } },
+          ];
+
+          // Adiciona o Texto de Apoio APENAS se ele existir e não for vazio
+          if (piece.comment && piece.comment.trim() !== '') {
+              textElements.push(
+                  { text: '', options: { breakLine: true } }, // Adiciona um espaço
+                  { text: 'Texto de Apoio:', options: { fontFace: 'Montserrat', bold: true, fontSize: 12, color: TEXT_DARK, breakLine: true } },
+                  { text: piece.comment, options: { fontFace: 'Montserrat', fontSize: 10, color: TEXT_DARK, breakLine: true } }
+              );
+          }
+
+          // Adiciona a caixa de texto ao slide com todos os elementos preparados
+          slidePeca.addText(textElements, {
+              x: 0.5,
+              y: 0.5,
+              w: 2.7, // Largura da caixa de texto (ajuste se necessário)
+              h: 4.5, // Altura da caixa de texto (ajuste se necessário)
+              align: 'left',
+              valign: 'top',
+              autoFit: true, // Tenta ajustar o texto ao container
+              fontSize: 10, // Define um tamanho base
           });
+
+          // --- FIM DA ALTERAÇÃO ---
 
           const isImage = (piece.mimetype || '').startsWith('image/');
           const isVideo = (piece.mimetype || '').startsWith('video/');
@@ -486,10 +506,10 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
                 slidePeca.addMedia({ ...mediaOptions, type: 'video' });
               }
             } else {
-              slidePeca.addText(`[Falha ao carregar: "${piece.originalName}"]`, { placeholder: 'media', align: 'center', color: 'C00000' });
+              slidePeca.addText(`[Falha ao carregar: "${piece.originalName}"]`, { x: 3.5, y: 0.5, w: 6.0, h: 4.5, align: 'center', valign: 'middle', color: 'C00000' });
             }
           } else {
-            slidePeca.addText(`[Pré-visualização não disponível para "${piece.originalName}"]`, { placeholder: 'media', align: 'center', color: '6c757d' });
+            slidePeca.addText(`[Pré-visualização não disponível para "${piece.originalName}"]`, { x: 3.5, y: 0.5, w: 6.0, h: 4.5, align: 'center', valign: 'middle', color: '6c757d' });
           }
         }
       }

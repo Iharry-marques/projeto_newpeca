@@ -1,13 +1,13 @@
 // Em: frontend/src/pages/HomePage.jsx (VERSÃO CORRIGIDA COM LAYOUT MASTER-DETAIL)
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
-import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, PlusCircle, FolderPlus, Trash2, Pencil, FileText, HelpCircle, ChevronsRight, Menu, Loader2 } from "lucide-react";
+import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, PlusCircle, FolderPlus, Trash2, Pencil, FileText, HelpCircle, ChevronsRight, Menu, Loader2, MessageSquareText } from "lucide-react";
 import toast from "react-hot-toast";
 import { DndContext, closestCorners, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import aprobiLogo from "../assets/aprobi-logo.jpg";
+import aprobiLogo from "../assets/aprobi-logo-beta.svg";
 import DriveImportButton from "../components/DriveImportButton";
 import CampaignSidebar from "../components/CampaignSidebar"; // Novo Componente
 import HelpModal from "../components/HelpModal"; // Novo Componente
@@ -29,7 +29,7 @@ const FileTypeIcon = ({ fileType }) => {
     return <FileIcon className="w-5 h-5 text-slate-500" />;
 };
 
-const FileViewer = ({ file, onOpenPopup, isSelectionMode = false, isSelected = false, onSelect = () => {}, isDragging = false }) => {
+const FileViewer = ({ file, onOpenPopup, isSelectionMode = false, isSelected = false, onSelect = () => {}, isDragging = false, supportButton = null }) => {
     const mime = file.mimetype || "";
     const name = file.originalName || file.filename || "arquivo";
     
@@ -61,6 +61,7 @@ const FileViewer = ({ file, onOpenPopup, isSelectionMode = false, isSelected = f
             )}
             <div className={`bg-white rounded-xl shadow-sm border p-3 transition-all duration-200 cursor-pointer ${isSelectionMode ? (isSelected ? 'border-blue-500 shadow-md' : 'border-slate-200 hover:border-blue-400') : 'border-slate-200 hover:shadow-md hover:border-blue-400 hover:-translate-y-1'} ${isDragging ? 'pointer-events-none' : ''}`}>
                 {renderPreview()}
+                {supportButton && <div className="mt-2">{supportButton}</div>}
                 <div className="mt-3 flex items-center">
                     <div className="flex-shrink-0"><FileTypeIcon fileType={mime} /></div>
                     <span className="ml-2 text-sm font-medium text-slate-700 truncate">{name}</span>
@@ -70,15 +71,93 @@ const FileViewer = ({ file, onOpenPopup, isSelectionMode = false, isSelected = f
     );
 };
 
-const FilePopup = ({ file, onClose }) => {
+const FilePopup = ({ file, onClose, onSaveComment }) => {
+    const [commentDraft, setCommentDraft] = useState("");
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        if (file) {
+            setCommentDraft(file.comment || "");
+        }
+    }, [file]);
+
     if (!file) return null;
-    const { mime, name, url } = file._resolved;
-    const renderContent = () => {
-        if (mime.startsWith("image/") && url) return <img src={url} alt={name} className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg" />;
-        if (mime.startsWith("video/") && url) return <video src={url} controls autoPlay className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg" />;
-        return <div className="w-96 h-96 bg-slate-100 rounded-xl flex flex-col items-center justify-center text-center p-4"><FileIcon className="w-24 h-24 text-slate-400 mb-4" /><span className="text-slate-700 font-semibold">{name}</span><p className="text-slate-500 text-sm mt-2">Pré-visualização não disponível.</p></div>;
+
+    const resolved = file._resolved || {
+        mime: file.mimetype || "",
+        name: file.originalName || file.filename || "arquivo",
+        url: file.filename
+            ? `${import.meta.env.VITE_BACKEND_URL}/campaigns/files/${file.filename}`
+            : file.driveId
+                ? `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${file.id}`
+                : null,
     };
-    return <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}><div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto flex flex-col" onClick={(e) => e.stopPropagation()}><div className="flex items-center justify-between p-4 border-b border-slate-200"><h3 className="text-lg font-bold text-slate-800 truncate">{name}</h3><button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-600" /></button></div><div className="p-6 flex-grow flex items-center justify-center">{renderContent()}</div></div></div>;
+    const { mime, name, url } = resolved;
+
+    const renderContent = () => {
+        if (mime.startsWith("image/") && url) {
+            return <img src={url} alt={name} className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg" />;
+        }
+        if (mime.startsWith("video/") && url) {
+            return <video src={url} controls autoPlay className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg" />;
+        }
+        return (
+            <div className="w-96 h-96 bg-slate-100 rounded-xl flex flex-col items-center justify-center text-center p-4">
+                <FileIcon className="w-24 h-24 text-slate-400 mb-4" />
+                <span className="text-slate-700 font-semibold">{name}</span>
+                <p className="text-slate-500 text-sm mt-2">Pré-visualização não disponível.</p>
+            </div>
+        );
+    };
+
+    const handleSave = async () => {
+        if (!file || !onSaveComment) return;
+        setIsSaving(true);
+        try {
+            await onSaveComment(file.id, commentDraft);
+            // onClose(); // O popup será fechado pelo componente pai ao salvar
+        } catch (error) {
+            // O tratamento de erro é feito pelo componente pai
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-4 border-b border-slate-200">
+                    <h3 className="text-lg font-bold text-slate-800 truncate">{name}</h3>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                        <X className="w-5 h-5 text-slate-600" />
+                    </button>
+                </div>
+                <div className="p-6 flex-grow flex items-center justify-center">{renderContent()}</div>
+                <div className="p-6 border-t border-slate-200 bg-slate-50">
+                    <label htmlFor="pieceComment" className="block text-sm font-semibold text-slate-700 mb-2">
+                        Texto de Apoio
+                    </label>
+                    <textarea
+                        id="pieceComment"
+                        value={commentDraft}
+                        onChange={(e) => setCommentDraft(e.target.value)}
+                        placeholder="Adicione um comentário ou texto de apoio para esta peça..."
+                        className="w-full p-3 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none"
+                        rows="4"
+                    />
+                    <div className="mt-4 flex justify-end">
+                        <button
+                            onClick={handleSave}
+                            disabled={isSaving}
+                            className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            {isSaving ? "Salvando..." : "Salvar Comentário"}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 const FileUpload = ({ onFilesAdded, driveButton, lineId, maxFileSizeMb }) => {
@@ -159,6 +238,20 @@ const SortablePiece = ({
         onRenameSubmit(piece.id);
     };
 
+    const handleCommentButtonClick = (event) => {
+        event.stopPropagation();
+        const resolved = piece._resolved || {
+            mime: piece.mimetype || "",
+            name: piece.originalName || piece.filename || "arquivo",
+            url: piece.filename
+                ? `${import.meta.env.VITE_BACKEND_URL}/campaigns/files/${piece.filename}`
+                : piece.driveId
+                    ? `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${piece.id}`
+                    : null,
+        };
+        onOpenPopup({ ...piece, _resolved: resolved });
+    };
+
     return (
         <div
             ref={setNodeRef}
@@ -188,6 +281,25 @@ const SortablePiece = ({
                     isSelected={isSelected}
                     onSelect={onToggleSelect}
                     isDragging={isActive}
+                    supportButton={
+                        !isSelectionMode && !isEditing ? (
+                            <button
+                                type="button"
+                                onClick={handleCommentButtonClick}
+                                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                                    piece.comment
+                                        ? "bg-orange-50 text-orange-700 hover:bg-orange-100"
+                                        : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                                }`}
+                            >
+                                <MessageSquareText
+                                    className={`w-4 h-4 ${piece.comment ? "text-orange-600" : "text-slate-500"}`}
+                                    fill={piece.comment ? "currentColor" : "none"}
+                                />
+                                <span>{piece.comment ? "Editar Texto de Apoio" : "Adicionar Texto de Apoio"}</span>
+                            </button>
+                        ) : null
+                    }
                 />
 
                 {isEditing && (
@@ -638,6 +750,40 @@ const HomePage = ({ googleAccessToken }) => {
             toast.error(error.message || 'Erro ao atualizar a peça.', { id: loadingToast });
         } finally {
             setIsSavingPieceName(false);
+        }
+    };
+
+    const handleSaveComment = async (pieceId, newComment) => {
+        const loadingToast = toast.loading("Salvando comentário...");
+        try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/pieces/${pieceId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ comment: newComment }),
+            });
+
+            if (!res.ok) {
+                const message = await parseErrorMessage(res, "Não foi possível salvar o comentário.");
+                throw new Error(message);
+            }
+
+            const updatedPiece = await res.json();
+
+            setCreativeLines((prevLines) =>
+                prevLines.map((line) => ({
+                    ...line,
+                    pieces: (line.pieces || []).map((piece) =>
+                        piece.id === updatedPiece.id ? { ...piece, comment: updatedPiece.comment } : piece
+                    ),
+                }))
+            );
+
+            toast.success("Comentário salvo!", { id: loadingToast });
+            setSelectedFile(null);
+        } catch (error) {
+            toast.error(error.message || "Erro ao salvar comentário.", { id: loadingToast });
+            throw error;
         }
     };
 
@@ -1160,7 +1306,7 @@ const HomePage = ({ googleAccessToken }) => {
                 onCancel={() => { if (!isDeletingLine) setLineDeleteTarget(null); }}
                 onConfirm={handleConfirmDeleteLine}
             />
-            <FilePopup file={selectedFile} onClose={() => setSelectedFile(null)} />
+            <FilePopup file={selectedFile} onClose={() => setSelectedFile(null)} onSaveComment={handleSaveComment} />
             <HelpModal isOpen={isHelpModalOpen} onClose={() => setHelpModalOpen(false)} />
             <NewCampaignModal isOpen={isCampaignModalOpen} onClose={() => setCampaignModalOpen(false)} onCampaignCreated={handleCampaignCreated} />
             {isExportingPpt && (

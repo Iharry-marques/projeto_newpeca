@@ -18,7 +18,7 @@ import {
   Sparkles,
   Send
 } from 'lucide-react';
-import aprobiLogo from "../assets/aprobi-logo.jpg";
+import aprobiLogo from "../assets/aprobi-logo-beta.svg";
 import toast from 'react-hot-toast';
 
 // Estados de validação atualizados
