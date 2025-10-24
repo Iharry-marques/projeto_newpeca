@@ -3,10 +3,9 @@
 const { Sequelize } = require('sequelize');
 const config = require('../config').db;
 
-const sequelize = new Sequelize({
-  dialect: config.dialect,
-  storage: config.storage,
-  logging: false, // Desligado para um console mais limpo
+const sequelize = new Sequelize(process.env.DATABASE_URL, {
+  dialect: 'postgres', // Especifica o dialeto
+  logging: console.log, // Deixe o log ativo por enquanto para ver as queries
 });
 
 // Carrega todos os modelos

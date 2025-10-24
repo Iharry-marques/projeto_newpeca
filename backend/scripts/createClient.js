@@ -1,53 +1,57 @@
-// backend/scripts/createClient.js
-// Script para criar usuários clientes
+// Em: backend/scripts/createClient.js (VERSÃO ATUALIZADA PARA CARGA INICIAL)
 
 require('dotenv').config();
 const { Client, sequelize } = require('../models');
 
-async function createClient() {
+// Lista de clientes que queremos cadastrar como "Empresas-Mãe"
+const clientCompanies = [
+  "AMERICANAS", "ARAMIS", "CANTU", "COGNA", "ESPORTE DA SORTE",
+  "HASDEX", "HORTIFRUTI NATURAL DA TERRA", "IDEAZARVOS", "KEETA",
+  "MASTERCARD", "O BOTICARIO", "RD", "SAMSUNG", "SAMSUNG E STORE",
+  "SICREDI", "VIVO"
+];
+
+async function createInitialClients() {
   try {
-    // Sincronizar o banco de dados
     await sequelize.sync();
+    console.log('Banco de dados sincronizado.');
 
-    // Dados do cliente (modifique conforme necessário)
-    const clientData = {
-      name: 'João Silva',
-      email: 'joao@empresacliente.com',
-      password: 'senha123', // Será criptografada automaticamente
-      company: 'Empresa Cliente Ltda',
-      isActive: true, 
-    };
+    let createdCount = 0;
 
-    // Verificar se já existe
-    const existingClient = await Client.findOne({ where: { email: clientData.email } });
-    
-    if (existingClient) {
-      console.log(`Cliente com email ${clientData.email} já existe!`);
-      return;
+    for (const companyName of clientCompanies) {
+      // Vamos criar um "usuário" genérico para cada empresa por enquanto.
+      // A senha é obrigatória no modelo, então usamos uma placeholder.
+      const clientData = {
+        name: `Contato Principal ${companyName}`,
+        email: `contato@${companyName.toLowerCase().replace(/\s+/g, '')}.com`,
+        password: 'password_placeholder', // Senha genérica que não será usada para login
+        company: companyName,
+        isActive: true,
+      };
+
+      // Verifica se uma empresa com esse nome já existe para não duplicar
+      const [client, created] = await Client.findOrCreate({
+        where: { company: companyName },
+        defaults: clientData
+      });
+
+      if (created) {
+        createdCount++;
+        console.log(`- Cliente/Empresa "${client.company}" criado com sucesso.`);
+      }
     }
 
-    // Criar o cliente
-    const client = await Client.create(clientData);
-    
-    console.log('Cliente criado com sucesso:');
-    console.log(`ID: ${client.id}`);
-    console.log(`Nome: ${client.name}`);
-    console.log(`Email: ${client.email}`);
-    console.log(`Empresa: ${client.company}`);
-    console.log('\nCredenciais de login:');
-    console.log(`Email: ${client.email}`);
-    console.log(`Senha: ${clientData.password}`);
-    
+    if (createdCount > 0) {
+      console.log(`\n${createdCount} novos clientes foram adicionados!`);
+    } else {
+      console.log('\nNenhum novo cliente adicionado, o banco de dados já estava populado.');
+    }
+
   } catch (error) {
-    console.error('Erro ao criar cliente:', error);
+    console.error('Erro ao fazer a carga inicial de clientes:', error);
   } finally {
     await sequelize.close();
   }
 }
 
-// Executar se o script for chamado diretamente
-if (require.main === module) {
-  createClient();
-}
-
-module.exports = createClient;
+createInitialClients();

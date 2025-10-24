@@ -1,0 +1,20 @@
+# docker-compose.yml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15 # Usando uma versão recente do PostgreSQL
+    container_name: aprobi_postgres_db
+    restart: always
+    environment:
+      - POSTGRES_USER=aprobi_user
+      - POSTGRES_PASSWORD=12150
+      - POSTGRES_DB=aprobi_db
+    ports:
+      - "5432:5432" # Expõe a porta do banco para o seu computador
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+
+  
