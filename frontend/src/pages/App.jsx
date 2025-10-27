@@ -4,7 +4,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 
 import ProtectedRoute from "../guards/ProtectedRoute";
-import Login from "./Login";
+import LoginPageSuno from "./LoginPageSuno";
+import LoginPageProduceria from "./LoginPageProduceria";
 import HomePage from "./HomePage";
 import ClientLoginPage from "./ClientLoginPage";
 import ClientDashboard from "./ClientDashboard";
@@ -132,17 +133,31 @@ useEffect(() => {
       )}
 
       <Routes>
-        {/* Login interno */}
+        {/* Login Suno */}
         <Route
           path="/login"
-          element={authenticated ? <Navigate to="/" replace /> : <Login />}
+          element={
+            authenticated ? <Navigate to="/" replace /> : <LoginPageSuno />
+          }
+        />
+
+        {/* Login Produceria */}
+        <Route
+          path="/login/produceria"
+          element={
+            authenticated ? (
+              <Navigate to="/" replace />
+            ) : (
+              <LoginPageProduceria />
+            )
+          }
         />
 
         {/* Home protegida */}
         <Route
           path="/"
           element={
-            <ProtectedRoute authenticated={authenticated}>
+            <ProtectedRoute>
               <HomePage googleAccessToken={googleAccessToken} />
             </ProtectedRoute>
           }
@@ -152,7 +167,7 @@ useEffect(() => {
         <Route
           path="/clients"
           element={
-            <ProtectedRoute authenticated={authenticated}>
+            <ProtectedRoute>
               <ClientManagementPage />
             </ProtectedRoute>
           }
