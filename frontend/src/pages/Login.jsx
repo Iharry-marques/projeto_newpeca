@@ -1,105 +1,92 @@
-// Em: frontend/src/pages/Login.jsx (VERSÃO ATUALIZADA COM AMBOS OS LOGINS)
+import React from "react";
+import { useNavigate } from "react-router-dom";
+import aprobiLogo from "@/assets/aprobi-logo-beta.svg";
+import { DotPattern } from "@/components/ui/dot-pattern";
+import { ShineBorder } from "@/components/magicui/shine-border";
+import { cn } from "@/lib/utils";
 
-import React from 'react';
-import { Link } from 'react-router-dom'; // Adicionamos a importação do Link
-import aprobiLogo from '../assets/aprobi-logo.jpg';
-
-// Esta variável agora aponta para a URL real do backend
 const GOOGLE_AUTH_URL = `${import.meta.env.VITE_BACKEND_URL}/auth/google`;
 
 export default function LoginPage() {
-  const handleLogin = () => {
-    // Redireciona o navegador para a URL COMPLETA do backend para iniciar o login do Google
+  const navigate = useNavigate();
+
+  const handleGoogleLogin = () => {
     window.location.href = GOOGLE_AUTH_URL;
   };
 
+  const handleClientPortalRedirect = () => {
+    navigate("/client/login");
+  };
+
+  const aprobiShineColors = [
+    "#FFDA0A",
+    "#FFB700",
+    "#FFC72C",
+    "#FFA500",
+    "#FF9500",
+  ];
+
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, rgba(248,250,252,1) 0%, rgba(241,245,249,1) 100%)',
-        fontFamily: 'sans-serif',
-        color: '#0f172a',
-        padding: 24,
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 440,
-          background: '#fff',
-          border: '1px solid #e2e8f0',
-          borderRadius: 16,
-          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.05)',
-          padding: 28,
-          textAlign: 'center',
-        }}
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-100 to-slate-200 p-4 sm:p-6 lg:p-8">
+      <ShineBorder
+        className="relative z-10 w-full max-w-md shadow-2xl"
+        colors={aprobiShineColors}
+        borderWidth={1}
+        duration={8}
+        borderRadius={32}
       >
-        <img
-          src={aprobiLogo}
-          alt="Aprobi"
-          style={{
-            width: 120,
-            height: 'auto',
-            borderRadius: 12,
-            display: 'block',
-            margin: '0 auto 16px auto',
-            objectFit: 'cover',
-          }}
-        />
-        <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>
-          Aprobi • Login
-        </h1>
-        
-        {/* --- SEÇÃO PARA COLABORADORES SUNO --- */}
-        <p style={{ marginTop: 16, color: '#475569', fontSize: '0.9rem' }}>
-          Acesso para colaboradores Suno.
-        </p>
-        <button
-          onClick={handleLogin}
-          style={{
-            marginTop: 8,
-            width: '100%',
-            height: 44,
-            borderRadius: 10,
-            border: '1px solid #e2e8f0',
-            background: 'linear-gradient(90deg, #ffc801, #ffb700)',
-            color: '#18181b',
-            fontWeight: 700,
-            cursor: 'pointer',
-          }}
-        >
-          Entrar com Google
-        </button>
+        <div className="rounded-[28px] bg-white/95 p-10 text-center backdrop-blur-sm">
+          <img src={aprobiLogo} alt="Aprobi" className="mx-auto mb-6 h-auto w-24" />
+          <h1 className="mb-3 text-3xl font-bold text-slate-800">
+            Bem-vindo ao Aprobi
+          </h1>
+          <p className="mb-8 text-slate-500">
+            Selecione seu tipo de acesso abaixo.
+          </p>
 
-        {/* --- DIVISOR (NOVO) --- */}
-        <div style={{ margin: '24px 0', border: 0, borderTop: '1px solid #e2e8f0' }} />
+          <div className="mb-6 space-y-3">
+            <p className="text-sm font-medium text-slate-600">
+              Acesso para colaboradores Suno:
+            </p>
+            <button
+              onClick={handleGoogleLogin}
+              className="w-full transform rounded-xl bg-gradient-to-r from-[#ffc801] to-[#ffb700] py-3 px-4 font-semibold text-slate-900 shadow-sm transition-all duration-200 hover:scale-[1.02] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-offset-2"
+            >
+              Entrar com Google
+            </button>
+          </div>
 
-        {/* --- SEÇÃO PARA CLIENTES (NOVA) --- */}
-        <p style={{ marginTop: 8, color: '#475569', fontSize: '0.9rem' }}>
-          Acesso exclusivo para clientes.
-        </p>
-        <Link to="/client/login">
-          <button
-            style={{
-              marginTop: 8,
-              width: '100%',
-              height: 44,
-              borderRadius: 10,
-              border: '1px solid #e2e8f0',
-              background: '#1e293b', // Cor escura para diferenciar
-              color: 'white',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            Portal do Cliente
-          </button>
-        </Link>
-      </div>
+          <div className="relative my-8">
+            <div className="absolute inset-0 flex items-center" aria-hidden="true">
+              <div className="w-full border-t border-slate-200" />
+            </div>
+            <div className="relative flex justify-center">
+              <span className="bg-white px-2 text-sm text-slate-400">OU</span>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-slate-600">
+              Acesso exclusivo para clientes:
+            </p>
+            <button
+              onClick={handleClientPortalRedirect}
+              className="w-full transform rounded-xl bg-slate-800 py-3 px-4 font-semibold text-white shadow-sm transition-all duration-200 hover:scale-[1.02] hover:bg-slate-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+            >
+              Acessar Portal do Cliente
+            </button>
+          </div>
+        </div>
+      </ShineBorder>
+
+      <DotPattern
+        width={25}
+        height={25}
+        cx={1.5}
+        cy={1.5}
+        cr={1}
+        className={cn("absolute inset-0 h-full w-full fill-slate-400/60")}
+      />
     </div>
   );
 }

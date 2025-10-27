@@ -1,6 +1,7 @@
 // vite.config.js
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -23,5 +24,10 @@ export default defineConfig({
   preview: {
     host: true,
     port: 3001, // SE FOR RODAR LOCALMENTE, SEMPRE ABRIR O FRONT DEPOIS DO BACKEND
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
   },
 })
