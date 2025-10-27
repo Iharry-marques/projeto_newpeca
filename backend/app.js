@@ -26,6 +26,11 @@ const app = express();
 const isProduction = process.env.NODE_ENV === "production";
 const redisUrl = process.env.REDIS_URL;
 
+const allowedOrigins = (process.env.FRONTEND_URL || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 async function createSessionStore() {
   if (redisUrl && isProduction) { // Apenas tenta usar Redis em produção
     try {
@@ -59,7 +64,24 @@ app.set("trust proxy", 1);
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL,
+    origin: (origin, callback) => {
+      // Permite chamadas sem header Origin (ex.: curl, health checks)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Ambiente local segue liberado para localhost
+      if (!isProduction && origin.startsWith("http://localhost")) {
+        return callback(null, true);
+      }
+
+      console.warn(`[CORS] Origem bloqueada: ${origin}`);
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   })
 );

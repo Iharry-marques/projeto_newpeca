@@ -1,18 +1,25 @@
 FROM node:20-slim
 
-# Dependências úteis (mantivemos mínimo; se usar Puppeteer nesta fase adicionamos libs depois)
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+ # Instala ffmpeg e libvips (dependência do sharp)
+ RUN apt-get update && apt-get install -y --no-install-recommends \
+     ffmpeg \
+     libvips-dev \
+     ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /usr/src/app
+ WORKDIR /usr/src/app
 
-COPY package*.json ./
-RUN npm ci --omit=dev
+ COPY package*.json ./
+ # Instala dependências normais E as devDependencies que podem ser necessárias
+ # para compilar o sharp corretamente durante o `npm ci`
+ RUN npm ci --include=dev
 
-COPY . .
+ # Remove devDependencies após a instalação para manter a imagem menor
+ RUN npm prune --production
 
-ENV NODE_ENV=production
-ENV PORT=8080
+ COPY . .
 
-CMD ["node", "app.js"]
+ ENV NODE_ENV=production
+ ENV PORT=10000
+
+ CMD ["node", "app.js"]
