@@ -33,8 +33,13 @@ passport.use(new GoogleStrategy({
         return done(new Error('Email não encontrado no perfil do Google.'), null);
       }
 
-      const domain = email.split('@')[1];
-      if (process.env.SUNO_DOMAIN && domain !== process.env.SUNO_DOMAIN) {
+      const domain = email.split('@')[1]?.toLowerCase();
+      const allowedDomains = (process.env.SUNO_DOMAIN || '')
+        .split(',')
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+
+      if (allowedDomains.length && !allowedDomains.includes(domain)) {
         return done(null, false, { message: 'Domínio não autorizado.' });
       }
 
