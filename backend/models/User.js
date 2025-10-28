@@ -24,7 +24,11 @@ module.exports = (sequelize) => {
     },
     role: {
       type: DataTypes.STRING,
+      allowNull: false,
       defaultValue: 'collaborator', // 'admin' ou 'collaborator'
+      validate: {
+        isIn: [['admin', 'collaborator']],
+      },
     },
   }, {
     hooks: {

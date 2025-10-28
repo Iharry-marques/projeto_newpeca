@@ -2,12 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Calendar, 
-  User, 
-  Sparkles, 
-  FileText, 
-  Eye, 
+import {
+  Calendar,
+  User,
+  Sparkles,
+  FileText,
+  Eye,
   Clock,
   CheckCircle,
   AlertCircle,
@@ -15,7 +15,7 @@ import {
   LogOut,
   Building
 } from 'lucide-react';
-import aprobiLogo from "../assets/aprobi-logo.jpg";
+import LogoButton from "../components/LogoButton";
 
 const ClientDashboard = () => {
   const [campaigns, setCampaigns] = useState([]);
@@ -149,7 +149,7 @@ const ClientDashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-start sm:items-center gap-4">
-              <img src={aprobiLogo} alt="Aprobi Logo" className="w-14 sm:w-16 h-auto" />
+              <LogoButton imageClassName="w-14 sm:w-16" />
               <div>
                 <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Portal do Cliente</h1>
                 <p className="text-sm sm:text-base text-slate-600">Suas campanhas para aprovação</p>

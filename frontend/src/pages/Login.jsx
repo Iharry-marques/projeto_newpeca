@@ -1,9 +1,9 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import aprobiLogo from "@/assets/aprobi-logo-beta.svg";
 import { DotPattern } from "@/components/ui/dot-pattern";
 import { ShineBorder } from "@/components/magicui/shine-border";
 import { cn } from "@/lib/utils";
+import LogoButton from "@/components/LogoButton";
 
 const GOOGLE_AUTH_URL = `${import.meta.env.VITE_BACKEND_URL}/auth/google`;
 
@@ -36,7 +36,7 @@ export default function LoginPage() {
         borderRadius={32}
       >
         <div className="rounded-[28px] bg-white/95 p-10 text-center backdrop-blur-sm">
-          <img src={aprobiLogo} alt="Aprobi" className="mx-auto mb-6 h-auto w-24" />
+          <LogoButton buttonClassName="mx-auto mb-6" imageClassName="w-24" />
           <h1 className="mb-3 text-3xl font-bold text-slate-800">
             Bem-vindo ao Aprobi
           </h1>

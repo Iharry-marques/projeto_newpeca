@@ -26,6 +26,14 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING,
       allowNull: false,
     },
+    MasterClientId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: 'MasterClients',
+        key: 'id',
+      },
+    },
     company: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -48,7 +56,7 @@ module.exports = (sequelize) => {
         }
       },
       beforeUpdate: async (client) => {
-        if (client.changed('password')) {
+        if (client.changed('password') && client.password) {
           const salt = await bcrypt.genSalt(10);
           client.password = await bcrypt.hash(client.password, salt);
         }
@@ -58,6 +66,7 @@ module.exports = (sequelize) => {
 
   // Método para verificar senha
   Client.prototype.validatePassword = async function(password) {
+    if (!password || !this.password) return false;
     return bcrypt.compare(password, this.password);
   };
 

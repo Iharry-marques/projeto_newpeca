@@ -1,47 +1,109 @@
-// Em: backend/models/index.js (VERSÃO FINAL E CORRIGIDA)
-
 const { Sequelize } = require('sequelize');
-const config = require('../config').db;
 
-const sequelize = new Sequelize(process.env.DATABASE_URL, {
-  dialect: 'postgres', // Especifica o dialeto
-  logging: console.log, // Deixe o log ativo por enquanto para ver as queries
-});
+const connectionUri = process.env.DATABASE_URL;
+let sequelize;
 
-// Carrega todos os modelos
+if (connectionUri) {
+  sequelize = new Sequelize(connectionUri, {
+    dialect: 'postgres',
+    logging: process.env.NODE_ENV === 'development' ? console.log : false,
+    dialectOptions:
+      process.env.NODE_ENV === 'production'
+        ? {
+            ssl: {
+              require: true,
+              rejectUnauthorized: false,
+            },
+          }
+        : {},
+  });
+} else {
+  console.warn('[DB] DATABASE_URL não definida, usando config.js como fallback.');
+  const config = require('../config').db;
+  sequelize = new Sequelize({
+    dialect: config.dialect || 'sqlite',
+    storage: config.storage || 'database.sqlite',
+    logging: false,
+  });
+}
+
 const modelDefiners = [
-  require('./User'), require('./Client'), require('./Campaign'),
-  require('./Piece'), require('./CampaignClient'), require('./CreativeLine'),
+  require('./User'),
+  require('./MasterClient'),
+  require('./Client'),
+  require('./Campaign'),
+  require('./Piece'),
+  require('./CampaignClient'),
+  require('./CreativeLine'),
 ];
+
 for (const modelDefiner of modelDefiners) {
   modelDefiner(sequelize);
 }
 
-// Extrai os modelos para facilitar a definição das associações
-const { User, Client, Campaign, Piece, CampaignClient, CreativeLine } = sequelize.models;
+const {
+  User,
+  MasterClient,
+  Client,
+  Campaign,
+  Piece,
+  CampaignClient,
+  CreativeLine,
+} = sequelize.models;
 
-/* =========================== ASSOCIAÇÕES =========================== */
-
-// User <-> Campaign
 User.hasMany(Campaign, { as: 'campaigns', foreignKey: 'createdBy' });
 Campaign.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
 
-// Campaign <-> CreativeLine
-Campaign.hasMany(CreativeLine, { as: 'creativeLines', foreignKey: 'CampaignId', onDelete: 'CASCADE' });
+Campaign.hasMany(CreativeLine, {
+  as: 'creativeLines',
+  foreignKey: 'CampaignId',
+  onDelete: 'CASCADE',
+});
 CreativeLine.belongsTo(Campaign, { as: 'campaign', foreignKey: 'CampaignId' });
 
-// CreativeLine <-> Piece
-CreativeLine.hasMany(Piece, { as: 'pieces', foreignKey: 'CreativeLineId', onDelete: 'CASCADE' });
+CreativeLine.hasMany(Piece, {
+  as: 'pieces',
+  foreignKey: 'CreativeLineId',
+  onDelete: 'CASCADE',
+});
 Piece.belongsTo(CreativeLine, { as: 'creativeLine', foreignKey: 'CreativeLineId' });
 
-// Campaign <-> Client (Muitos-para-Muitos)
-Campaign.belongsToMany(Client, { through: CampaignClient, as: 'authorizedClients', foreignKey: 'campaignId' });
-Client.belongsToMany(Campaign, { through: CampaignClient, as: 'assignedCampaigns', foreignKey: 'clientId' });
+Campaign.belongsToMany(Client, {
+  through: CampaignClient,
+  as: 'authorizedClients',
+  foreignKey: 'campaignId',
+  onDelete: 'CASCADE',
+});
+Client.belongsToMany(Campaign, {
+  through: CampaignClient,
+  as: 'assignedCampaigns',
+  foreignKey: 'clientId',
+  onDelete: 'CASCADE',
+});
 
-// Piece <-> Client (Revisor)
-Piece.belongsTo(Client, { as: 'reviewer', foreignKey: 'reviewedBy' });
+Piece.belongsTo(Client, {
+  as: 'reviewer',
+  foreignKey: 'reviewedBy',
+  constraints: false,
+});
 Client.hasMany(Piece, { as: 'reviewedPieces', foreignKey: 'reviewedBy' });
 
+MasterClient.hasMany(Campaign, {
+  as: 'campaigns',
+  foreignKey: 'MasterClientId',
+});
+Campaign.belongsTo(MasterClient, {
+  as: 'masterClient',
+  foreignKey: 'MasterClientId',
+});
 
-/* ========================= EXPORTAÇÃO ========================= */
+MasterClient.hasMany(Client, {
+  as: 'clientUsers',
+  foreignKey: 'MasterClientId',
+});
+Client.belongsTo(MasterClient, {
+  as: 'masterClient',
+  foreignKey: 'MasterClientId',
+});
+
 module.exports = { sequelize, ...sequelize.models };

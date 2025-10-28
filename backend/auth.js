@@ -34,7 +34,11 @@ passport.use(new GoogleStrategy({
       }
 
       const domain = email.split('@')[1];
-      if (process.env.SUNO_DOMAIN && domain !== process.env.SUNO_DOMAIN) {
+      const allowedDomains = process.env.SUNO_DOMAIN
+        ? process.env.SUNO_DOMAIN.split(',').map((d) => d.trim()).filter(Boolean)
+        : null;
+
+      if (allowedDomains?.length && !allowedDomains.includes(domain)) {
         return done(null, false, { message: 'Domínio não autorizado.' });
       }
 
@@ -125,11 +129,13 @@ const meRouter = express.Router();
 // Rota para verificar o status da autenticação
 meRouter.get('/', (req, res) => {
   if (req.isAuthenticated() && req.user) {
-    res.json({ authenticated: true, user: req.user });
-  } else {
-    // Retorna 401 se não estiver autenticado
-    res.status(401).json({ authenticated: false, user: null });
+    const userData = typeof req.user.toJSON === 'function' ? req.user.toJSON() : req.user;
+    const { password, ...safeUser } = userData;
+    res.json({ authenticated: true, user: safeUser });
+    return;
   }
+  // Retorna 401 se não estiver autenticado
+  res.status(401).json({ authenticated: false, user: null });
 });
 
 // Rota para obter o token de acesso do Drive

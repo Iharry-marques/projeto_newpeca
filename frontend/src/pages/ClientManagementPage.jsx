@@ -2,22 +2,22 @@
 
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { 
-  Users, 
-  Plus, 
-  Edit2, 
-  Trash2, 
-  Eye, 
-  EyeOff, 
-  Building, 
-  Mail, 
+import {
+  Users,
+  Plus,
+  Edit2,
+  Eye,
+  EyeOff,
+  Building,
+  Mail,
   Calendar,
   ToggleLeft,
   ToggleRight,
   Search,
-  X
+  X,
 } from 'lucide-react';
-import aprobiLogo from "../assets/aprobi-logo.jpg";
+import LogoButton from "../components/LogoButton";
+import api from '../api/client';
 
 const ClientManagementPage = () => {
   const [clients, setClients] = useState([]);
@@ -33,11 +33,16 @@ const ClientManagementPage = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    MasterClientId: '',
+    password: '',
     company: '',
-    password: ''
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [modalError, setModalError] = useState('');
+
+  const [masterClients, setMasterClients] = useState([]);
+  const [isLoadingMasterClients, setIsLoadingMasterClients] = useState(false);
 
   // Carregar clientes
   useEffect(() => {
@@ -46,10 +51,14 @@ const ClientManagementPage = () => {
 
   // Filtrar clientes
   useEffect(() => {
-    let filtered = clients.filter(client => {
-      const matchesSearch = client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           client.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           (client.company && client.company.toLowerCase().includes(searchTerm.toLowerCase()));
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const filtered = clients.filter(client => {
+      const masterClientName = client.masterClient?.name || '';
+      const matchesSearch =
+        client.name.toLowerCase().includes(normalizedSearch) ||
+        client.email.toLowerCase().includes(normalizedSearch) ||
+        (client.company && client.company.toLowerCase().includes(normalizedSearch)) ||
+        masterClientName.toLowerCase().includes(normalizedSearch);
       
       const matchesStatus = showInactive ? true : client.isActive;
       
@@ -59,20 +68,40 @@ const ClientManagementPage = () => {
     setFilteredClients(filtered);
   }, [clients, searchTerm, showInactive]);
 
+  // Busca MasterClients quando o modal é aberto
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    const fetchMasterClients = async () => {
+      setIsLoadingMasterClients(true);
+      setModalError('');
+      try {
+        const { data } = await api.get('/master-clients');
+        setMasterClients(data || []);
+      } catch (err) {
+        console.error('Erro ao buscar Master Clients:', err);
+        const message =
+          err.response?.data?.error ||
+          err.message ||
+          'Não foi possível carregar a lista de empresas.';
+        setModalError(message);
+        setMasterClients([]);
+      } finally {
+        setIsLoadingMasterClients(false);
+      }
+    };
+
+    fetchMasterClients();
+  }, [isModalOpen]);
+
   const fetchClients = async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/clients`, {
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        throw new Error('Falha ao carregar clientes');
-      }
-
-      const data = await response.json();
+      const { data } = await api.get('/clients');
       setClients(data);
+      setError('');
     } catch (err) {
-      setError('Erro ao carregar clientes: ' + err.message);
+      const message = err.response?.data?.error || err.message || 'Falha ao carregar clientes';
+      setError('Erro ao carregar clientes: ' + message);
     } finally {
       setIsLoading(false);
     }
@@ -82,121 +111,132 @@ const ClientManagementPage = () => {
     if (client) {
       setEditingClient(client);
       setFormData({
-        name: client.name,
-        email: client.email,
+        name: client.name || '',
+        email: client.email || '',
+        MasterClientId: client.MasterClientId
+          ? String(client.MasterClientId)
+          : client.masterClient?.id
+          ? String(client.masterClient.id)
+          : '',
+        password: '',
         company: client.company || '',
-        password: ''
       });
     } else {
       setEditingClient(null);
       setFormData({
         name: '',
         email: '',
+        MasterClientId: '',
+        password: '',
         company: '',
-        password: ''
       });
     }
     setIsModalOpen(true);
     setShowPassword(false);
-    setError('');
+    setModalError('');
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingClient(null);
-    setFormData({ name: '', email: '', company: '', password: '' });
-    setError('');
+    setFormData({
+      name: '',
+      email: '',
+      MasterClientId: '',
+      password: '',
+      company: '',
+    });
+    setModalError('');
     setShowPassword(false);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!formData.name || !formData.email || (!editingClient && !formData.password)) {
-      setError('Preencha todos os campos obrigatórios');
+
+    if (
+      !formData.name.trim() ||
+      !formData.email.trim() ||
+      !formData.MasterClientId ||
+      (!editingClient && !formData.password)
+    ) {
+      setModalError('Preencha todos os campos obrigatórios (*)');
       return;
     }
 
     setIsSubmitting(true);
-    setError('');
+    setModalError('');
 
     try {
-      const url = editingClient 
-        ? `${import.meta.env.VITE_BACKEND_URL}/clients/${editingClient.id}`
-        : `${import.meta.env.VITE_BACKEND_URL}/clients`;
-      
-      const method = editingClient ? 'PUT' : 'POST';
-      
-      const body = { ...formData };
-      if (editingClient && !formData.password) {
-        delete body.password; // Não enviar senha vazia em edição
-      }
+      const url = editingClient ? `/clients/${editingClient.id}` : '/clients';
+      const method = editingClient ? 'put' : 'post';
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(body),
-      });
+      const payload = {
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        MasterClientId: parseInt(formData.MasterClientId, 10),
+        company: formData.company.trim() || null,
+      };
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao salvar cliente');
-      }
-
-      const savedClient = await response.json();
-      
       if (editingClient) {
-        setClients(prev => prev.map(client => 
-          client.id === editingClient.id ? savedClient : client
-        ));
+        payload.isActive = editingClient.isActive;
+      }
+
+      if (!editingClient || formData.password) {
+        if (!formData.password) {
+          setModalError('Senha é obrigatória para novos clientes.');
+          setIsSubmitting(false);
+          return;
+        }
+        payload.password = formData.password;
+      }
+
+      const { data: savedClient } = await api.request({ method, url, data: payload });
+
+      if (editingClient) {
+        setClients(prev =>
+          prev.map(client =>
+            client.id === editingClient.id ? savedClient : client
+          )
+        );
+        toast.success('Cliente atualizado!');
       } else {
-        setClients(prev => [savedClient, ...prev]);
+        setClients(prev =>
+          [savedClient, ...prev].sort((a, b) => a.name.localeCompare(b.name))
+        );
+        toast.success('Cliente criado!');
       }
 
       handleCloseModal();
-      toast.success(editingClient ? 'Cliente atualizado com sucesso!' : 'Cliente criado com sucesso!');
     } catch (err) {
-      setError(err.message);
+      const message =
+        err.response?.data?.error || err.message || 'Erro ao salvar cliente';
+      setModalError(message);
+      console.error('Erro ao salvar cliente:', err.response?.data || err);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleToggleStatus = async (clientId, currentStatus) => {
+  const handleToggleStatus = async (clientId) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/clients/${clientId}/toggle-status`, {
-        method: 'PATCH',
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Erro ao alterar status');
-      }
-
-      const updatedClient = await response.json();
-      setClients(prev => prev.map(client => 
-        client.id === clientId ? updatedClient : client
-      ));
-      toast.success(`Cliente ${updatedClient.isActive ? 'reativado' : 'desativado'} com sucesso.`);
+      const { data: updatedClient } = await api.patch(`/clients/${clientId}/toggle-status`);
+      setClients(prev =>
+        prev.map(client =>
+          client.id === clientId ? updatedClient : client
+        )
+      );
+      toast.success(
+        `Cliente ${updatedClient.isActive ? 'reativado' : 'desativado'} com sucesso.`
+      );
     } catch (err) {
-      toast.error('Erro ao alterar status: ' + err.message);
+      const message = err.response?.data?.error || err.message || 'Erro ao alterar status';
+      toast.error('Erro ao alterar status: ' + message);
     }
   };
 
   const handleViewCampaigns = async (clientId) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/clients/${clientId}/campaigns`, {
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        throw new Error('Erro ao carregar campanhas');
-      }
-
-      const data = await response.json();
+      const { data } = await api.get(`/clients/${clientId}/campaigns`);
       
       if (data.campaigns.length === 0) {
         toast('Este cliente ainda não tem campanhas atribuídas.');
@@ -213,7 +253,8 @@ const ClientManagementPage = () => {
         ), { duration: 5000 });
       }
     } catch (err) {
-      toast.error('Erro ao carregar campanhas: ' + err.message);
+      const message = err.response?.data?.error || err.message || 'Erro ao carregar campanhas';
+      toast.error('Erro ao carregar campanhas: ' + message);
     }
   };
 
@@ -239,7 +280,7 @@ const ClientManagementPage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-start sm:items-center gap-4 sm:gap-6">
-              <img src={aprobiLogo} alt="Aprobi Logo" className="w-24 sm:w-28 md:w-32 h-auto" />
+              <LogoButton imageClassName="w-24 sm:w-28 md:w-32" />
               <div className="sm:border-l sm:border-slate-300 sm:pl-6">
                 <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
                   Gerenciamento de Clientes
@@ -270,7 +311,7 @@ const ClientManagementPage = () => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
               <input
                 type="text"
-                placeholder="Buscar por nome, email ou empresa..."
+                placeholder="Buscar por nome, email ou empresa mestre..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none transition-all"
@@ -299,6 +340,14 @@ const ClientManagementPage = () => {
           </div>
         </div>
 
+        {error && (
+          <div className="mb-8">
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+              {error}
+            </div>
+          </div>
+        )}
+
         {/* Lista de Clientes */}
         {filteredClients.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-2xl shadow-lg border border-slate-200">
@@ -321,7 +370,7 @@ const ClientManagementPage = () => {
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
                     <th className="text-left px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Cliente</th>
-                    <th className="text-left px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Empresa</th>
+                    <th className="text-left px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Empresa (Master)</th>
                     <th className="text-left px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Status</th>
                     <th className="text-left px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Cadastrado em</th>
                     <th className="text-center px-4 sm:px-6 py-4 text-sm font-semibold text-slate-700">Ações</th>
@@ -341,9 +390,14 @@ const ClientManagementPage = () => {
                       </td>
                       
                       <td className="px-4 sm:px-6 py-4">
-                        {client.company ? (
+                        {client.masterClient?.name ? (
                           <div className="flex items-center text-slate-700">
-                            <Building className="w-4 h-4 mr-2 text-slate-500" />
+                            <Building className="w-4 h-4 mr-2 text-slate-500 flex-shrink-0" />
+                            {client.masterClient.name}
+                          </div>
+                        ) : client.company ? (
+                          <div className="flex items-center text-slate-500 italic">
+                            <Building className="w-4 h-4 mr-2 flex-shrink-0" />
                             {client.company}
                           </div>
                         ) : (
@@ -353,7 +407,7 @@ const ClientManagementPage = () => {
                       
                       <td className="px-4 sm:px-6 py-4">
                         <button
-                          onClick={() => handleToggleStatus(client.id, client.isActive)}
+                          onClick={() => handleToggleStatus(client.id)}
                           className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold transition-colors ${
                             client.isActive
                               ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
@@ -427,9 +481,9 @@ const ClientManagementPage = () => {
             
             <form onSubmit={handleSubmit}>
               <div className="p-6 space-y-4">
-                {error && (
+                {modalError && !isLoadingMasterClients && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-red-700 text-sm font-medium">{error}</p>
+                    <p className="text-red-700 text-sm font-medium">{modalError}</p>
                   </div>
                 )}
                 
@@ -462,10 +516,43 @@ const ClientManagementPage = () => {
                     placeholder="email@exemplo.com"
                   />
                 </div>
-                
+
+                <div>
+                  <label htmlFor="masterClient" className="block text-sm font-semibold text-slate-700 mb-2">
+                    Empresa Cliente *
+                  </label>
+                  <select
+                    id="masterClient"
+                    value={formData.MasterClientId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, MasterClientId: e.target.value }))}
+                    className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none appearance-none bg-no-repeat bg-right pr-8 disabled:opacity-50 disabled:bg-slate-50"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                      backgroundPosition: 'right 0.75rem center',
+                      backgroundSize: '1.5em 1.5em',
+                    }}
+                    required
+                    disabled={isLoadingMasterClients || masterClients.length === 0}
+                  >
+                    <option value="" disabled>
+                      {isLoadingMasterClients ? 'Carregando empresas...' : 'Selecione a empresa'}
+                    </option>
+                    {masterClients.map((mc) => (
+                      <option key={mc.id} value={mc.id}>
+                        {mc.name}
+                      </option>
+                    ))}
+                  </select>
+                  {!isLoadingMasterClients && masterClients.length === 0 && !modalError && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      Nenhuma empresa cadastrada. Cadastre uma empresa mestre primeiro.
+                    </p>
+                  )}
+                </div>
+
                 <div>
                   <label htmlFor="company" className="block text-sm font-semibold text-slate-700 mb-2">
-                    Empresa
+                    Detalhe Empresa (Opcional)
                   </label>
                   <input 
                     type="text" 
@@ -473,7 +560,7 @@ const ClientManagementPage = () => {
                     value={formData.company} 
                     onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
                     className="w-full p-3 border border-slate-300 rounded-xl focus:border-[#ffc801] focus:ring-2 focus:ring-[#ffc801]/20 outline-none transition-all"
-                    placeholder="Nome da empresa (opcional)"
+                    placeholder="Ex: Departamento Marketing"
                   />
                 </div>
 

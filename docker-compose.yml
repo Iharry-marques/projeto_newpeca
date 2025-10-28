@@ -1,20 +1,45 @@
-# docker-compose.yml
-version: '3.8'
+# docker-compose.yml (VERSÃO ATUALIZADA)
+version: '3.8' # Pode remover esta linha se desejar, como o log sugeriu
+
 services:
   postgres:
-    image: postgres:15 # Usando uma versão recente do PostgreSQL
+    image: postgres:15
     container_name: aprobi_postgres_db
     restart: always
     environment:
-      - POSTGRES_USER=aprobi_user
-      - POSTGRES_PASSWORD=12150
-      - POSTGRES_DB=aprobi_db
+      POSTGRES_USER: ${POSTGRES_USER:-aprobi_user} # Usa .env ou default
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-12150} # Usa .env ou default
+      POSTGRES_DB: ${POSTGRES_DB:-aprobi_db} # Usa .env ou default
     ports:
       - "5432:5432" # Expõe a porta do banco para o seu computador
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-volumes:
-  postgres_data:
+  backend:                  # <-- INÍCIO DO NOVO SERVIÇO
+    build: ./backend        # Indica para construir a imagem a partir do Dockerfile na pasta backend
+    container_name: aprobi_backend
+    restart: always
+    ports:
+      - "3000:3000"         # Mapeia a porta 3000 do container para a porta 3000 do seu PC
+    environment:
+      # Passa as variáveis de ambiente necessárias para o backend
+      # Certifique-se que seu .env na pasta backend tem essas variáveis!
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://aprobi_user:12150@postgres:5432/aprobi_db} # Essencial para conectar ao DB
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001} # Frontend URL (padrão localhost:3001)
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key} # Para autenticação de cliente
+      # Adicione outras variáveis do .env que o backend precise
+    depends_on:
+      - postgres          # Garante que o banco de dados inicie antes do backend
+    volumes:              # Opcional: Mapeia o código local para dentro do container para hot-reload em dev
+      - ./backend:/usr/src/app # Mapeia a pasta backend local
+      - /usr/src/app/node_modules # Não sobrescreve node_modules dentro do container
+      # Use `docker compose up --build` se alterar dependências (package.json)
+                          # <-- FIM DO NOVO SERVIÇO
 
-  
+volumes:
+  postgres_data:          # Define o volume nomeado para persistir dados do PG

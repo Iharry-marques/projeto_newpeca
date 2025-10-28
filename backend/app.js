@@ -1,33 +1,45 @@
-// Em: backend/app.js (VERSÃO FINAL PARA USAR COM PROXY NO RENDER)
+// Em: backend/app.js (CORRIGIDO)
 
 require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
-const SQLiteStoreFactory = require("connect-sqlite3")(session);
 const RedisStore = require("connect-redis").default;
 const { createClient } = require("redis");
 const bodyParser = require("body-parser");
 const creativeLineRoutes = require("./routes/creativeLines");
 const pieceRoutes = require("./routes/pieces");
+const masterClientRoutes = require("./routes/masterClients");
 
 // Importações dos Módulos do Projeto
+// Apenas uma linha importando de "./auth"
 const { googleAuthRouter, ensureAuth, meRouter, passport } = require("./auth");
+const { ensureAdmin } = require("./middleware/authorization"); // Importa ensureAdmin
 const campaignRoutes = require("./routes/campaigns");
 const filesRoutes = require("./routes/files");
+// Linha duplicada removida daqui
 const clientManagementRoutes = require("./routes/clientManagement");
 const clientAuthRoutes = require("./routes/clientAuth");
 const approvalRoutes = require("./routes/approval");
 const { sequelize } = require("./models");
 const errorHandler = require("./middleware/errorHandler");
 
+// ... (Restante do arquivo app.js continua igual) ...
+
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
 const redisUrl = process.env.REDIS_URL;
 
+function createMemoryStore() {
+  const MemoryStore = require("memorystore")(session);
+  return new MemoryStore({
+    checkPeriod: 24 * 60 * 60 * 1000, // Limpa sessões expiradas a cada 24h
+  });
+}
+
 async function createSessionStore() {
-  if (redisUrl && isProduction) { // Apenas tenta usar Redis em produção
+  if (redisUrl && isProduction) {
     try {
       const redisClient = createClient({ url: redisUrl });
       redisClient.on("error", (err) => {
@@ -41,17 +53,20 @@ async function createSessionStore() {
       });
     } catch (error) {
       console.error(
-        "[SESSION] Falha ao conectar no Redis. Voltando para SQLite:",
+        "[SESSION] Falha ao conectar no Redis:",
         error
       );
+      console.warn(
+        "[SESSION] Usando MemoryStore como fallback (não recomendado em produção)."
+      );
+      return createMemoryStore();
     }
   }
 
-  console.log("[SESSION] Utilizando SQLite como store de sessão.");
-  return new SQLiteStoreFactory({
-    db: "database.sqlite",
-    dir: "./",
-  });
+  console.warn(
+    "[SESSION] Ambiente não-produção sem REDIS_URL. Usando MemoryStore (sessões serão perdidas ao reiniciar)."
+  );
+  return createMemoryStore();
 }
 
 // Para o Express confiar no proxy reverso do Render
@@ -104,12 +119,13 @@ async function start() {
   // --- ROTAS ---
   app.use(googleAuthRouter);
   app.use("/me", meRouter);
+  app.use("/master-clients", masterClientRoutes);
   app.use("/client-auth", clientAuthRoutes.router);
   app.use("/creative-lines", ensureAuth, creativeLineRoutes);
   app.use("/pieces", ensureAuth, pieceRoutes);
   app.use("/campaigns", filesRoutes);
   app.use("/campaigns", ensureAuth, campaignRoutes);
-  app.use("/clients", ensureAuth, clientManagementRoutes);
+  app.use("/clients", ensureAuth, ensureAdmin, clientManagementRoutes);
   app.use("/approval", approvalRoutes);
   app.use(errorHandler);
 

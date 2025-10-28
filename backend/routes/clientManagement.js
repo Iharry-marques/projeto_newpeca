@@ -1,7 +1,8 @@
 // backend/routes/clientManagement.js
 
 const express = require('express');
-const { Client, Campaign, CampaignClient } = require('../models');
+const { Op } = require('sequelize');
+const { Client, Campaign, CampaignClient, MasterClient } = require('../models');
 const router = express.Router();
 
 // Middleware para verificar se é usuário Suno
@@ -15,9 +16,37 @@ function ensureAuthenticated(req, res, next) {
 // LISTAR TODOS OS CLIENTES
 router.get('/', ensureAuthenticated, async (req, res) => {
   try {
+    const whereClause = {};
+
+    if (req.query.masterClientId) {
+      const masterClientIdNum = parseInt(req.query.masterClientId, 10);
+      if (Number.isNaN(masterClientIdNum)) {
+        return res
+          .status(400)
+          .json({ error: 'MasterClientId inválido fornecido para filtro.' });
+      }
+      whereClause.MasterClientId = masterClientIdNum;
+    }
+
     const clients = await Client.findAll({
-      attributes: ['id', 'name', 'email', 'company', 'isActive', 'createdAt'],
-      order: [['name', 'ASC']]
+      where: whereClause,
+      attributes: [
+        'id',
+        'name',
+        'email',
+        'company',
+        'isActive',
+        'createdAt',
+        'MasterClientId',
+      ],
+      include: [
+        {
+          model: MasterClient,
+          as: 'masterClient',
+          attributes: ['id', 'name'],
+        },
+      ],
+      order: [['name', 'ASC']],
     });
     res.json(clients);
   } catch (error) {
@@ -29,35 +58,57 @@ router.get('/', ensureAuthenticated, async (req, res) => {
 // CRIAR NOVO CLIENTE
 router.post('/', ensureAuthenticated, async (req, res) => {
   try {
-    const { name, email, company, password } = req.body;
+    const { name, email, MasterClientId, password, company } = req.body;
+    const masterClientIdNum = parseInt(MasterClientId, 10);
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ 
-        error: 'Nome, email e senha são obrigatórios' 
+    if (!name || !email || !password || Number.isNaN(masterClientIdNum)) {
+      return res.status(400).json({
+        error: 'Nome, email, senha e ID da empresa cliente são obrigatórios',
       });
+    }
+
+    const masterClientExists = await MasterClient.findByPk(masterClientIdNum);
+    if (!masterClientExists) {
+      return res
+        .status(400)
+        .json({ error: 'Empresa cliente selecionada inválida.' });
     }
 
     // Verificar se já existe
     const existingClient = await Client.findOne({ where: { email } });
     if (existingClient) {
-      return res.status(400).json({ 
-        error: 'Já existe um cliente com este email' 
+      return res.status(400).json({
+        error: 'Já existe um cliente com este email',
       });
     }
 
     const client = await Client.create({
       name,
       email,
-      company,
-      password, // Será criptografada automaticamente pelo hook
-      isActive: true
+      password,
+      MasterClientId: masterClientIdNum,
+      company: company || null,
+      isActive: true,
     });
 
-    // Retornar sem a senha
-    const { password: _, ...clientData } = client.toJSON();
-    res.status(201).json(clientData);
+    const clientWithDetails = await Client.findByPk(client.id, {
+      attributes: { exclude: ['password'] },
+      include: [
+        { model: MasterClient, as: 'masterClient', attributes: ['id', 'name'] },
+      ],
+    });
+
+    res.status(201).json(clientWithDetails);
   } catch (error) {
     console.error('Erro ao criar cliente:', error);
+    if (
+      error.name === 'SequelizeValidationError' ||
+      error.name === 'SequelizeUniqueConstraintError'
+    ) {
+      return res
+        .status(400)
+        .json({ error: error.errors.map((e) => e.message).join(', ') });
+    }
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -66,7 +117,7 @@ router.post('/', ensureAuthenticated, async (req, res) => {
 router.put('/:id', ensureAuthenticated, async (req, res) => {
   try {
     const clientId = req.params.id;
-    const { name, email, company, isActive, password } = req.body;
+    const { name, email, MasterClientId, isActive, password, company } = req.body;
 
     const client = await Client.findByPk(clientId);
     if (!client) {
@@ -75,30 +126,66 @@ router.put('/:id', ensureAuthenticated, async (req, res) => {
 
     // Verificar email duplicado (se mudou)
     if (email && email !== client.email) {
-      const existingClient = await Client.findOne({ 
-        where: { email, id: { [require('sequelize').Op.ne]: clientId } }
+      const existingClient = await Client.findOne({
+        where: { email, id: { [Op.ne]: clientId } },
       });
       if (existingClient) {
-        return res.status(400).json({ 
-          error: 'Já existe um cliente com este email' 
+        return res.status(400).json({
+          error: 'Já existe um cliente com este email',
         });
+      }
+    }
+
+    let masterClientIdNum;
+    if (MasterClientId !== undefined) {
+      masterClientIdNum = parseInt(MasterClientId, 10);
+      if (Number.isNaN(masterClientIdNum)) {
+        return res
+          .status(400)
+          .json({ error: 'ID da empresa cliente inválido.' });
+      }
+      if (masterClientIdNum !== client.MasterClientId) {
+        const masterClientExists = await MasterClient.findByPk(
+          masterClientIdNum
+        );
+        if (!masterClientExists) {
+          return res
+            .status(400)
+            .json({ error: 'Empresa cliente selecionada inválida.' });
+        }
       }
     }
 
     const updateData = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
+    if (masterClientIdNum !== undefined) {
+      updateData.MasterClientId = masterClientIdNum;
+    }
     if (company !== undefined) updateData.company = company;
     if (typeof isActive === 'boolean') updateData.isActive = isActive;
     if (password) updateData.password = password; // Hook criptografará
 
     await client.update(updateData);
 
-    // Retornar sem a senha
-    const { password: _, ...clientData } = client.toJSON();
-    res.json(clientData);
+    const updatedClientWithDetails = await Client.findByPk(client.id, {
+      attributes: { exclude: ['password'] },
+      include: [
+        { model: MasterClient, as: 'masterClient', attributes: ['id', 'name'] },
+      ],
+    });
+
+    res.json(updatedClientWithDetails);
   } catch (error) {
     console.error('Erro ao atualizar cliente:', error);
+    if (
+      error.name === 'SequelizeValidationError' ||
+      error.name === 'SequelizeUniqueConstraintError'
+    ) {
+      return res
+        .status(400)
+        .json({ error: error.errors.map((e) => e.message).join(', ') });
+    }
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -115,8 +202,14 @@ router.patch('/:id/toggle-status', ensureAuthenticated, async (req, res) => {
 
     await client.update({ isActive: !client.isActive });
     
-    const { password: _, ...clientData } = client.toJSON();
-    res.json(clientData);
+    const updatedClientWithDetails = await Client.findByPk(client.id, {
+      attributes: { exclude: ['password'] },
+      include: [
+        { model: MasterClient, as: 'masterClient', attributes: ['id', 'name'] },
+      ],
+    });
+
+    res.json(updatedClientWithDetails);
   } catch (error) {
     console.error('Erro ao alterar status do cliente:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });

@@ -3,11 +3,12 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { Upload, Check, Image as ImageIcon, Video as VideoIcon, File as FileIcon, X, PlusCircle, FolderPlus, Trash2, Pencil, FileText, HelpCircle, ChevronsRight, Menu, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
+import api from "../api/client";
 import { DndContext, closestCorners, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import aprobiLogo from "../assets/aprobi-logo.jpg";
+import LogoButton from "../components/LogoButton";
 import DriveImportButton from "../components/DriveImportButton";
 import CampaignSidebar from "../components/CampaignSidebar";
 import HelpModal from "../components/HelpModal";
@@ -221,47 +222,146 @@ const SortablePiece = ({
     );
 };
 
-const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated, clients = [] }) => {
+const NewCampaignModal = ({ isOpen, onClose, onCampaignCreated }) => {
     const [name, setName] = useState("");
-    const [selectedClient, setSelectedClient] = useState("");
+    const [selectedMasterClientId, setSelectedMasterClientId] = useState("");
+    const [masterClients, setMasterClients] = useState([]);
+    const [isLoadingClients, setIsLoadingClients] = useState(false);
     const [error, setError] = useState("");
     const [isCreating, setIsCreating] = useState(false);
 
-    if (!isOpen) return null;
+    useEffect(() => {
+        if (!isOpen) {
+            setName("");
+            setSelectedMasterClientId("");
+            setError("");
+            setMasterClients([]);
+            setIsLoadingClients(false);
+            return;
+        }
+
+        let isActive = true;
+
+        const fetchMasterClients = async () => {
+            setIsLoadingClients(true);
+            setError("");
+            try {
+                const response = await api.get("/master-clients");
+                if (isActive) {
+                    setMasterClients(response.data || []);
+                }
+            } catch (err) {
+                console.error("Erro ao buscar Master Clients:", err);
+                if (isActive) {
+                    setError("Não foi possível carregar a lista de clientes.");
+                    setMasterClients([]);
+                }
+            } finally {
+                if (isActive) {
+                    setIsLoadingClients(false);
+                }
+            }
+        };
+
+        fetchMasterClients();
+
+        return () => {
+            isActive = false;
+        };
+    }, [isOpen]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!name || !selectedClient) { setError("Nome e cliente são obrigatórios."); return; }
+        if (!name.trim() || !selectedMasterClientId) {
+            setError("Nome da Campanha e Cliente são obrigatórios.");
+            return;
+        }
         setError("");
         setIsCreating(true);
         try {
-            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/campaigns`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ name, client: selectedClient }) });
-            if (!res.ok) { const errData = await res.json().catch(() => ({})); throw new Error(errData.error || "Falha ao criar campanha."); }
-            const newCampaign = await res.json();
+            const response = await api.post("/campaigns", {
+                name: name.trim(),
+                MasterClientId: parseInt(selectedMasterClientId, 10),
+            });
+            const newCampaign = response.data;
             onCampaignCreated(newCampaign);
-            handleClose();
-        } catch (err) { setError(err.message); } 
-        finally { setIsCreating(false); }
+            toast.success(`Campanha "${newCampaign.name}" criada!`);
+            onClose();
+        } catch (err) {
+            const message =
+                err.response?.data?.error ||
+                err.message ||
+                "Falha ao criar campanha.";
+            setError(message);
+            toast.error(message);
+        } finally {
+            setIsCreating(false);
+        }
     };
-    const handleClose = () => { setName(""); setSelectedClient(""); setError(""); onClose(); };
-    
+
+    if (!isOpen) return null;
+
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-                <div className="p-6 border-b border-slate-200 flex justify-between items-center"><h3 className="text-xl font-bold text-slate-800">Criar Nova Campanha</h3><button onClick={handleClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-600" /></button></div>
+                <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+                    <h3 className="text-xl font-bold text-slate-800">Criar Nova Campanha</h3>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                        <X className="w-5 h-5 text-slate-600" />
+                    </button>
+                </div>
                 <form onSubmit={handleSubmit}>
                     <div className="p-6 space-y-6">
-                        {error && <p className="text-red-500 text-sm">{error}</p>}
-                        <div><label htmlFor="campaignName" className="block text-sm font-semibold text-slate-700 mb-2">Nome da Campanha *</label><input type="text" id="campaignName" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none" required /></div>
+                        {error && !isLoadingClients && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-md">{error}</p>}
                         <div>
-                           <label className="block text-sm font-semibold text-slate-700 mb-2">Cliente *</label>
-                           <select value={selectedClient} onChange={e => setSelectedClient(e.target.value)} className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none bg-no-repeat bg-right pr-8" style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")` }}>
-                                <option value="" disabled>Selecione um cliente</option>
-                                {clients.map(c => <option key={c.id} value={c.company || c.name}>{c.company || c.name}</option>)}
-                           </select>
+                            <label htmlFor="campaignName" className="block text-sm font-semibold text-slate-700 mb-2">Nome da Campanha *</label>
+                            <input
+                                type="text"
+                                id="campaignName"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                className="w-full p-3 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none"
+                                required
+                                placeholder="Ex: Lançamento Produto X"
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="campaignClient" className="block text-sm font-semibold text-slate-700 mb-2">Cliente *</label>
+                            <select
+                                id="campaignClient"
+                                value={selectedMasterClientId}
+                                onChange={(e) => setSelectedMasterClientId(e.target.value)}
+                                className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none bg-no-repeat bg-right pr-8 disabled:opacity-50 disabled:bg-slate-50"
+                                style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")` }}
+                                required
+                                disabled={isLoadingClients || masterClients.length === 0}
+                            >
+                                <option value="" disabled>
+                                    {isLoadingClients ? "Carregando clientes..." : "Selecione um cliente"}
+                                </option>
+                                {masterClients.map((client) => (
+                                    <option key={client.id} value={client.id}>
+                                        {client.name}
+                                    </option>
+                                ))}
+                            </select>
+                            {!isLoadingClients && masterClients.length === 0 && !error && (
+                                <p className="text-xs text-slate-500 mt-1">Nenhum cliente mestre cadastrado.</p>
+                            )}
                         </div>
                     </div>
-                    <div className="flex items-center justify-end space-x-4 p-6 bg-slate-50 rounded-b-2xl"><button type="button" onClick={handleClose} className="px-4 py-2 text-slate-600 font-semibold hover:text-slate-800">Cancelar</button><button type="submit" disabled={isCreating} className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50">{isCreating ? "Criando..." : "Criar Campanha"}</button></div>
+                    <div className="flex items-center justify-end space-x-4 p-6 bg-slate-50 rounded-b-2xl">
+                        <button type="button" onClick={onClose} disabled={isCreating} className="px-4 py-2 text-slate-600 font-semibold hover:text-slate-800 disabled:opacity-50">
+                            Cancelar
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={isCreating || isLoadingClients || !name.trim() || !selectedMasterClientId}
+                            className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            {isCreating ? "Criando..." : "Criar Campanha"}
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -953,7 +1053,7 @@ const HomePage = ({ googleAccessToken }) => {
                         >
                             <Menu className="w-6 h-6" />
                         </button>
-                        <img src={aprobiLogo} alt="Aprobi Logo" className="w-28 sm:w-32 max-h-20 h-auto object-contain" />
+                        <LogoButton imageClassName="w-28 sm:w-32 max-h-20 object-contain" />
                     </div>
                     <button
                         onClick={() => setHelpModalOpen(true)}
@@ -1213,7 +1313,6 @@ const HomePage = ({ googleAccessToken }) => {
                 isOpen={isCampaignModalOpen}
                 onClose={() => setCampaignModalOpen(false)}
                 onCampaignCreated={handleCampaignCreated}
-                clients={clientList}
             />
             <ClientSelectionModal
                 isOpen={isClientSelectionModalOpen}

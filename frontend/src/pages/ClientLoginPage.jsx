@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Lock, User, Eye, EyeOff } from 'lucide-react';
-import aprobiLogo from "../assets/aprobi-logo.jpg";
+import LogoButton from "../components/LogoButton";
 
 const ClientLoginPage = () => {
   const [email, setEmail] = useState('');
@@ -56,11 +56,7 @@ const ClientLoginPage = () => {
       <div className="w-full max-w-md">
         {/* Logo e Header */}
         <div className="text-center mb-8">
-          <img 
-            src={aprobiLogo} 
-            alt="Aprobi Logo" 
-            className="w-24 h-auto mx-auto mb-4" 
-          />
+          <LogoButton buttonClassName="mx-auto mb-4" imageClassName="w-24" />
           <h1 className="text-2xl font-bold text-slate-800 mb-2">
             Portal do Cliente
           </h1>

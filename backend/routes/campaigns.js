@@ -10,7 +10,7 @@ const { Op } = require('sequelize');
 const PptxGenJS = require('pptxgenjs');
 const fetch = require('node-fetch');
 const mime = require('mime-types');
-const { Campaign, CreativeLine, Piece, Client } = require('../models');
+const { Campaign, CreativeLine, Piece, Client, MasterClient } = require('../models');
 const { ensureAuth } = require('../auth');
 const {
   convertRawImageIfNeeded,
@@ -93,6 +93,7 @@ function serializeCampaign(campaignInstance) {
   const campaign = campaignInstance?.toJSON ? campaignInstance.toJSON() : campaignInstance;
   return {
     ...campaign,
+    client: campaign?.masterClient?.name ?? campaign?.client ?? null,
     creativeLines: (campaign?.creativeLines || [])
       .slice()
       .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
@@ -191,21 +192,99 @@ router.get('/', ensureAuth, async (req, res, next) => {
   try {
     const campaigns = await Campaign.findAll({
       where: { createdBy: req.user.id },
-      include: [{ model: CreativeLine, as: 'creativeLines', include: [{ model: Piece, as: 'pieces' }] }],
+      include: [
+        {
+          model: MasterClient,
+          as: 'masterClient',
+          attributes: ['id', 'name'],
+        },
+        {
+          model: CreativeLine,
+          as: 'creativeLines',
+          attributes: ['id'],
+          include: [{ model: Piece, as: 'pieces', attributes: ['id'] }],
+        },
+      ],
       order: [['createdAt', 'DESC']],
     });
-    const payload = campaigns.map(serializeCampaign);
+
+    const payload = campaigns.map((campaignInstance) => {
+      const campaign = campaignInstance.toJSON();
+      const pieceCount =
+        campaign.creativeLines?.reduce(
+          (acc, line) => acc + (line?.pieces?.length || 0),
+          0
+        ) || 0;
+
+      return {
+        id: campaign.id,
+        name: campaign.name,
+        client: campaign.masterClient?.name || 'Cliente não definido',
+        MasterClientId: campaign.MasterClientId,
+        status: campaign.status,
+        createdAt: campaign.createdAt,
+        pieceCount,
+        masterClient: campaign.masterClient || null,
+      };
+    });
+
     res.status(200).json(payload);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.post('/', ensureAuth, async (req, res, next) => {
   try {
-    const { name, client } = req.body;
-    if (!name || !client) return res.status(400).json({ error: 'Nome e cliente da campanha são obrigatórios.' });
-    const campaign = await Campaign.create({ ...req.body, createdBy: req.user.id, status: 'draft' });
+    const { name, MasterClientId } = req.body;
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Nome da campanha é obrigatório.' });
+    }
+
+    const masterClientIdNum = parseInt(MasterClientId, 10);
+    if (Number.isNaN(masterClientIdNum)) {
+      return res.status(400).json({ error: 'Cliente é obrigatório.' });
+    }
+
+    const masterClientExists = await MasterClient.findByPk(masterClientIdNum);
+    if (!masterClientExists) {
+      return res.status(400).json({ error: 'Cliente selecionado inválido.' });
+    }
+
+    const campaign = await Campaign.create({
+      name: name.trim(),
+      MasterClientId: masterClientIdNum,
+      createdBy: req.user.id,
+      status: 'draft',
+      creativeLine: req.body.creativeLine || null,
+      startDate: req.body.startDate || null,
+      endDate: req.body.endDate || null,
+    });
+
+    const campaignWithDetails = await Campaign.findByPk(campaign.id, {
+      include: [{ model: MasterClient, as: 'masterClient', attributes: ['id', 'name'] }],
+    });
+
+    if (campaignWithDetails) {
+      const createdCampaign = campaignWithDetails.toJSON();
+      res.status(201).json({
+        ...createdCampaign,
+        client: createdCampaign.masterClient?.name || 'Cliente não definido',
+        pieceCount: 0,
+      });
+      return;
+    }
+
     res.status(201).json(campaign);
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.name === 'SequelizeValidationError' || err.name === 'SequelizeUniqueConstraintError') {
+      return res
+        .status(400)
+        .json({ error: err.errors.map((e) => e.message).join(', ') });
+    }
+    next(err);
+  }
 });
 
 router.put('/:id', ensureAuth, async (req, res, next) => {

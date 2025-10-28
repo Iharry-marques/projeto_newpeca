@@ -18,7 +18,7 @@ import {
   Sparkles,
   Send
 } from 'lucide-react';
-import aprobiLogo from "../assets/aprobi-logo.jpg";
+import LogoButton from "../components/LogoButton";
 import toast from 'react-hot-toast';
 
 // Estados de validação atualizados
@@ -452,7 +452,7 @@ const ClientApprovalPage = () => {
         <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <img src={aprobiLogo} alt="Aprobi Logo" className="w-16 h-auto" />
+              <LogoButton imageClassName="w-16" />
               <div>
                 <h1 className="text-2xl font-bold text-slate-800">Aprovação de Peças</h1>
                 <p className="text-slate-600">Sistema de validação para clientes</p>
