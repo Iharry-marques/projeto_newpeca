@@ -18,14 +18,11 @@ const { googleAuthRouter, ensureAuth, meRouter, passport } = require("./auth");
 const { ensureAdmin } = require("./middleware/authorization"); // Importa ensureAdmin
 const campaignRoutes = require("./routes/campaigns");
 const filesRoutes = require("./routes/files");
-// Linha duplicada removida daqui
 const clientManagementRoutes = require("./routes/clientManagement");
 const clientAuthRoutes = require("./routes/clientAuth");
 const approvalRoutes = require("./routes/approval");
 const { sequelize } = require("./models");
 const errorHandler = require("./middleware/errorHandler");
-
-// ... (Restante do arquivo app.js continua igual) ...
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -125,7 +122,7 @@ async function start() {
   app.use("/pieces", ensureAuth, pieceRoutes);
   app.use("/campaigns", filesRoutes);
   app.use("/campaigns", ensureAuth, campaignRoutes);
-  app.use("/clients", ensureAuth, ensureAdmin, clientManagementRoutes);
+  app.use("/clients", ensureAuth, clientManagementRoutes);
   app.use("/approval", approvalRoutes);
   app.use(errorHandler);
 

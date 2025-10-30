@@ -4,17 +4,18 @@ const express = require('express');
 const { Op } = require('sequelize');
 const { Client, Campaign, CampaignClient, MasterClient } = require('../models');
 const router = express.Router();
+const { ensureAdmin } = require('../middleware/authorization');
 
-// Middleware para verificar se é usuário Suno
-function ensureAuthenticated(req, res, next) {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  res.status(401).json({ error: 'Usuário não autenticado.' });
-}
+const FRIENDLY_STATUS_MAP = {
+  approved: 'Aprovada',
+  sent_for_approval: 'Enviada para Aprovação',
+  in_review: 'Em Revisão',
+  draft: 'Rascunho',
+  needs_changes: 'Precisa de Alterações'
+};
 
 // LISTAR TODOS OS CLIENTES
-router.get('/', ensureAuthenticated, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const whereClause = {};
 
@@ -56,7 +57,7 @@ router.get('/', ensureAuthenticated, async (req, res) => {
 });
 
 // CRIAR NOVO CLIENTE
-router.post('/', ensureAuthenticated, async (req, res) => {
+router.post('/', ensureAdmin, async (req, res) => {
   try {
     const { name, email, MasterClientId, password, company } = req.body;
     const masterClientIdNum = parseInt(MasterClientId, 10);
@@ -114,7 +115,7 @@ router.post('/', ensureAuthenticated, async (req, res) => {
 });
 
 // ATUALIZAR CLIENTE
-router.put('/:id', ensureAuthenticated, async (req, res) => {
+router.put('/:id', ensureAdmin, async (req, res) => {
   try {
     const clientId = req.params.id;
     const { name, email, MasterClientId, isActive, password, company } = req.body;
@@ -191,7 +192,7 @@ router.put('/:id', ensureAuthenticated, async (req, res) => {
 });
 
 // DESATIVAR/REATIVAR CLIENTE
-router.patch('/:id/toggle-status', ensureAuthenticated, async (req, res) => {
+router.patch('/:id/toggle-status', ensureAdmin, async (req, res) => {
   try {
     const clientId = req.params.id;
     const client = await Client.findByPk(clientId);
@@ -217,7 +218,7 @@ router.patch('/:id/toggle-status', ensureAuthenticated, async (req, res) => {
 });
 
 // LISTAR CAMPANHAS DE UM CLIENTE
-router.get('/:id/campaigns', ensureAuthenticated, async (req, res) => {
+router.get('/:id/campaigns', async (req, res) => {
   try {
     const clientId = req.params.id;
     
@@ -249,7 +250,7 @@ router.get('/:id/campaigns', ensureAuthenticated, async (req, res) => {
 });
 
 // ATRIBUIR CLIENTE A CAMPANHA
-router.post('/assign-campaign', ensureAuthenticated, async (req, res) => {
+router.post('/assign-campaign', async (req, res) => {
   try {
     const { campaignId, clientId, canApprove = true, canComment = true } = req.body;
 
@@ -259,16 +260,29 @@ router.post('/assign-campaign', ensureAuthenticated, async (req, res) => {
       });
     }
 
-    // Verificar se campanha existe
-    const campaign = await Campaign.findByPk(campaignId);
+    // Verificar se campanha existe e pertence ao usuário logado
+    const campaign = await Campaign.findOne({
+      where: { id: campaignId, createdBy: req.user.id }
+    });
     if (!campaign) {
-      return res.status(404).json({ error: 'Campanha não encontrada' });
+      return res.status(404).json({ error: 'Campanha não encontrada ou você não tem permissão.' });
     }
 
-    // Verificar se cliente existe e está ativo
-    const client = await Client.findByPk(clientId);
-    if (!client || !client.isActive) {
-      return res.status(404).json({ error: 'Cliente não encontrado ou inativo' });
+    if (['approved', 'sent_for_approval', 'in_review'].includes(campaign.status)) {
+      const friendlyStatus = FRIENDLY_STATUS_MAP[campaign.status] || campaign.status;
+      return res.status(400).json({ error: `Esta campanha já está "${friendlyStatus}" e não pode ser enviada novamente.` });
+    }
+
+    // Verificar se cliente existe, está ativo e pertence ao MasterClient da campanha
+    const client = await Client.findOne({
+      where: {
+        id: clientId,
+        isActive: true,
+        MasterClientId: campaign.MasterClientId
+      }
+    });
+    if (!client) {
+      return res.status(404).json({ error: 'Cliente selecionado não encontrado, inativo ou não pertence à empresa desta campanha.' });
     }
 
     // Criar/atualizar associação
@@ -277,22 +291,37 @@ router.post('/assign-campaign', ensureAuthenticated, async (req, res) => {
       clientId,
       canApprove,
       canComment,
-      assignedAt: new Date()
+      assignedAt: new Date(),
+      clientStatus: 'pending'
     });
+
+    if (campaign.status === 'draft' || campaign.status === 'needs_changes') {
+      await campaign.update({
+        status: 'sent_for_approval',
+        sentForApprovalAt: new Date()
+      });
+      console.log(`[Assign Campaign] Status da campanha ${campaignId} atualizado para sent_for_approval.`);
+    } else {
+      console.log(`[Assign Campaign] Status da campanha ${campaignId} (${campaign.status}) não modificado.`);
+    }
 
     res.json({
       success: true,
-      message: created ? 'Cliente atribuído à campanha' : 'Atribuição atualizada',
+      message: created
+        ? 'Cliente atribuído à campanha e campanha enviada para aprovação.'
+        : 'Atribuição atualizada.',
+      campaignStatus: campaign.status,
+      sentForApprovalAt: campaign.sentForApprovalAt,
       assignment: campaignClient
     });
   } catch (error) {
     console.error('Erro ao atribuir cliente:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
+    res.status(500).json({ error: 'Erro interno do servidor ao atribuir cliente.' });
   }
 });
 
 // REMOVER CLIENTE DE CAMPANHA
-router.delete('/unassign-campaign', ensureAuthenticated, async (req, res) => {
+router.delete('/unassign-campaign', async (req, res) => {
   try {
     const { campaignId, clientId } = req.body;
 

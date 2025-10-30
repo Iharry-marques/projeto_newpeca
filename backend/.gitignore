@@ -22,7 +22,7 @@ pnpm-debug.log*
 .DS_Store
 
 # Pasta de Uploads do Backend (se não quiser enviar os arquivos de teste)
-/backend/uploads/
+uploads/
 
 # Arquivos do Editor
 .vscode/

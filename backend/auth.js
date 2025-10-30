@@ -128,6 +128,10 @@ const meRouter = express.Router();
 
 // Rota para verificar o status da autenticação
 meRouter.get('/', (req, res) => {
+  console.log('[DEBUG] /me - Verificando autenticação. SessionID:', req.sessionID);
+  console.log('[DEBUG] /me - req.isAuthenticated():', req.isAuthenticated());
+  console.log('[DEBUG] /me - req.user:', req.user ? { id: req.user.id, username: req.user.username, role: req.user.role } : null);
+  // console.log('[DEBUG] /me - req.session:', req.session); // Descomente se precisar ver a sessão inteira
   if (req.isAuthenticated() && req.user) {
     const userData = typeof req.user.toJSON === 'function' ? req.user.toJSON() : req.user;
     const { password, ...safeUser } = userData;

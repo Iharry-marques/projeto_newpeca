@@ -1,4 +1,5 @@
-// Em: backend/routes/campaigns.js (VERSÃO FINAL COM DIMENSIONAMENTO INTELIGENTE DE MÍDIA)
+// Em: backend/routes/campaigns.js
+// *** VERSÃO ATUALIZADA QUE SALVA ARQUIVOS DO DRIVE LOCALMENTE ***
 
 const express = require('express');
 const router = express.Router();
@@ -11,7 +12,8 @@ const PptxGenJS = require('pptxgenjs');
 const fetch = require('node-fetch');
 const mime = require('mime-types');
 const { Campaign, CreativeLine, Piece, Client, MasterClient } = require('../models');
-const { ensureAuth } = require('../auth');
+// A rota /auth/google/callback salva o accessToken na sessão
+const { ensureAuth } = require('../auth'); 
 const {
   convertRawImageIfNeeded,
   downscaleImageIfNeeded,
@@ -93,6 +95,7 @@ function serializeCampaign(campaignInstance) {
   const campaign = campaignInstance?.toJSON ? campaignInstance.toJSON() : campaignInstance;
   return {
     ...campaign,
+    // CORREÇÃO: Usa masterClient.name se existir, senão o campo 'client' legado
     client: campaign?.masterClient?.name ?? campaign?.client ?? null,
     creativeLines: (campaign?.creativeLines || [])
       .slice()
@@ -105,30 +108,44 @@ function serializeCampaign(campaignInstance) {
 async function getFileData(piece, accessToken) {
   try {
     let fileBuffer;
+    let sourceMimetype = piece.mimetype; // Mimetype original
+
     if (piece.filename) {
+      // É um arquivo local, apenas leia
       const filePath = path.join(uploadDir, piece.filename);
       if (fs.existsSync(filePath)) {
         fileBuffer = await fs.promises.readFile(filePath);
       }
     } else if (piece.driveId && accessToken) {
+      // É um arquivo do Drive, baixe-o
       const driveUrl = `https://www.googleapis.com/drive/v3/files/${piece.driveId}?alt=media`;
       const response = await fetch(driveUrl, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
       if (!response.ok) throw new Error(`Falha ao buscar do Drive (${response.status}): ${response.statusText}`);
       fileBuffer = await response.buffer();
+      // O mimetype do Drive (ex: 'application/vnd.google-apps.document') pode ser diferente
+      // do mimetype salvo no 'piece' (que pode ser o 'originalName').
+      // Vamos confiar no 'piece.mimetype' se ele existir.
+      sourceMimetype = piece.mimetype || response.headers.get('content-type') || 'application/octet-stream';
+
+    } else if (piece.driveId && !accessToken) {
+        // Caso especial: import-from-drive precisa do token, export-ppt também.
+        throw new Error('Access Token do Google Drive não fornecido para peça do Drive.');
     }
 
     if (fileBuffer) {
+      // Normaliza o buffer (converte RAW, etc.)
       let { buffer: normalizedBuffer, mimetype: resolvedMimetype } = await convertRawImageIfNeeded(fileBuffer, {
-        mimetype: piece.mimetype,
+        mimetype: sourceMimetype, // Usa o mimetype de origem
         originalName: piece.originalName,
-        filename: piece.filename,
+        filename: piece.filename, // Pode ser null
       });
 
       normalizedBuffer = normalizedBuffer || fileBuffer;
-      resolvedMimetype = resolvedMimetype || piece.mimetype;
+      resolvedMimetype = resolvedMimetype || sourceMimetype;
 
+      // Redimensiona imagens muito grandes (para exportação PPT)
       if ((resolvedMimetype || '').startsWith('image/')) {
         const downscaled = await downscaleImageIfNeeded(normalizedBuffer, { mimetype: resolvedMimetype });
         normalizedBuffer = downscaled.buffer || normalizedBuffer;
@@ -137,6 +154,7 @@ async function getFileData(piece, accessToken) {
 
       let cover = null;
 
+      // Comprime vídeos muito grandes (para exportação PPT)
       if ((resolvedMimetype || '').startsWith('video/')) {
         const compressed = await compressVideoIfNeeded(
           normalizedBuffer,
@@ -156,11 +174,13 @@ async function getFileData(piece, accessToken) {
 
       const mediaSizeBytes = normalizedBuffer.byteLength || normalizedBuffer.length || 0;
 
+      // Verifica se o *resultado final* excede o limite do PPT
       if (PPT_MAX_MEDIA_BYTES && mediaSizeBytes > PPT_MAX_MEDIA_BYTES) {
         return {
-          skip: true,
-          reason: `Arquivo excede o limite de ${(PPT_MAX_MEDIA_BYTES / (1024 * 1024)).toFixed(1)} MB para inclusão no PPT.`,
+          buffer: normalizedBuffer, // Retorna o buffer mesmo assim para a ROTA DE IMPORTAÇÃO
           mimetype: resolvedMimetype,
+          skipPPT: true, // Adiciona flag para a rota de PPT ignorar
+          reason: `Arquivo excede o limite de ${(PPT_MAX_MEDIA_BYTES / (1024 * 1024)).toFixed(1)} MB para inclusão no PPT.`,
         };
       }
 
@@ -176,18 +196,20 @@ async function getFileData(piece, accessToken) {
         mimetype: resolvedMimetype,
         width: dimensions?.width || null,
         height: dimensions?.height || null,
+        size: mediaSizeBytes, // Retorna o tamanho final do buffer
         cover,
       };
     }
     return null;
   } catch (error) {
-    console.error(`Erro ao processar a peça ${piece.originalName}:`, error.message);
+    console.error(`Erro ao processar a peça ${piece.originalName} (ID: ${piece.id || piece.driveId}):`, error.message);
     return null;
   }
 }
 
-// ================== ROTAS EXISTENTES (Sem alterações) ==================
+// ================== ROTAS ==================
 
+// GET /
 router.get('/', ensureAuth, async (req, res, next) => {
   try {
     const campaigns = await Campaign.findAll({
@@ -219,12 +241,15 @@ router.get('/', ensureAuth, async (req, res, next) => {
       return {
         id: campaign.id,
         name: campaign.name,
-        client: campaign.masterClient?.name || 'Cliente não definido',
+        // CORREÇÃO: Usa masterClient.name ou 'client' legado
+        client: campaign.masterClient?.name || campaign.client || 'Cliente não definido',
         MasterClientId: campaign.MasterClientId,
         status: campaign.status,
         createdAt: campaign.createdAt,
         pieceCount,
         masterClient: campaign.masterClient || null,
+        // Adiciona dados para UX no frontend
+        sentForApprovalAt: campaign.sentForApprovalAt,
       };
     });
 
@@ -234,6 +259,7 @@ router.get('/', ensureAuth, async (req, res, next) => {
   }
 });
 
+// POST /
 router.post('/', ensureAuth, async (req, res, next) => {
   try {
     const { name, MasterClientId } = req.body;
@@ -242,6 +268,7 @@ router.post('/', ensureAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'Nome da campanha é obrigatório.' });
     }
 
+    // Valida o MasterClientId
     const masterClientIdNum = parseInt(MasterClientId, 10);
     if (Number.isNaN(masterClientIdNum)) {
       return res.status(400).json({ error: 'Cliente é obrigatório.' });
@@ -254,14 +281,15 @@ router.post('/', ensureAuth, async (req, res, next) => {
 
     const campaign = await Campaign.create({
       name: name.trim(),
-      MasterClientId: masterClientIdNum,
+      MasterClientId: masterClientIdNum, // Salva o ID do MasterClient
       createdBy: req.user.id,
       status: 'draft',
-      creativeLine: req.body.creativeLine || null,
+      creativeLine: req.body.creativeLine || null, // Campo legado
       startDate: req.body.startDate || null,
       endDate: req.body.endDate || null,
     });
 
+    // Retorna a campanha com o nome do cliente (MasterClient)
     const campaignWithDetails = await Campaign.findByPk(campaign.id, {
       include: [{ model: MasterClient, as: 'masterClient', attributes: ['id', 'name'] }],
     });
@@ -276,7 +304,7 @@ router.post('/', ensureAuth, async (req, res, next) => {
       return;
     }
 
-    res.status(201).json(campaign);
+    res.status(201).json(campaign); // Fallback
   } catch (err) {
     if (err.name === 'SequelizeValidationError' || err.name === 'SequelizeUniqueConstraintError') {
       return res
@@ -287,40 +315,86 @@ router.post('/', ensureAuth, async (req, res, next) => {
   }
 });
 
+// PUT /:id (Atualizar Campanha)
 router.put('/:id', ensureAuth, async (req, res, next) => {
   try {
-    const { name, client } = req.body;
-    if ((name === undefined || name === null) && (client === undefined || client === null)) {
-      return res.status(400).json({ error: 'Nenhum dado para atualizar.' });
-    }
-
+    const { name, MasterClientId } = req.body;
+    
     const campaign = await Campaign.findOne({ where: { id: req.params.id, createdBy: req.user.id } });
     if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada.' });
+
+    let hasChanges = false;
+    let newMasterClient = null;
 
     if (name !== undefined) {
       const trimmedName = String(name).trim();
       if (!trimmedName) return res.status(400).json({ error: 'O nome da campanha não pode ser vazio.' });
-      campaign.name = trimmedName;
+      if (trimmedName !== campaign.name) {
+          campaign.name = trimmedName;
+          hasChanges = true;
+      }
     }
 
-    if (client !== undefined) {
-      const trimmedClient = String(client).trim();
-      if (!trimmedClient) return res.status(400).json({ error: 'O cliente não pode ser vazio.' });
-      campaign.client = trimmedClient;
+    if (MasterClientId !== undefined) {
+        const masterClientIdNum = parseInt(MasterClientId, 10);
+        if (Number.isNaN(masterClientIdNum)) {
+             return res.status(400).json({ error: 'Cliente inválido.' });
+        }
+        
+        if (masterClientIdNum !== campaign.MasterClientId) {
+            newMasterClient = await MasterClient.findByPk(masterClientIdNum);
+            if (!newMasterClient) {
+                return res.status(400).json({ error: 'Cliente selecionado inválido.' });
+            }
+            campaign.MasterClientId = masterClientIdNum;
+            // Atualiza campo legado 'client' também por consistência, se precisar
+            campaign.client = newMasterClient.name; 
+            hasChanges = true;
+        }
+    }
+    
+    if (!hasChanges) {
+         return res.status(200).json(campaign); // Retorna 200 OK
     }
 
     await campaign.save();
-    res.status(200).json(campaign);
+
+    // Retorna a campanha atualizada com o nome do cliente
+    const updatedCampaignJson = campaign.toJSON();
+    if (newMasterClient) {
+        updatedCampaignJson.client = newMasterClient.name;
+    } else if (campaign.client) {
+        // Se não mudou o cliente, mas o nome ou outra coisa sim
+        // Tenta buscar o nome do cliente atual
+        const currentMasterClient = await MasterClient.findByPk(campaign.MasterClientId, { attributes: ['name'] });
+        updatedCampaignJson.client = currentMasterClient?.name || campaign.client;
+    }
+
+    res.status(200).json(updatedCampaignJson);
   } catch (err) { next(err); }
 });
 
+// GET /:id (Detalhes da Campanha)
 router.get('/:id', ensureAuth, async (req, res, next) => {
   try {
     const campaign = await Campaign.findOne({
       where: { id: req.params.id, createdBy: req.user.id },
       include: [
-        { model: CreativeLine, as: 'creativeLines', include: [{ model: Piece, as: 'pieces', order: [['order', 'ASC']] }] },
-        { model: Client, as: 'authorizedClients', through: { attributes: [] } },
+        { 
+          model: CreativeLine, 
+          as: 'creativeLines', 
+          include: [{ model: Piece, as: 'pieces', order: [['order', 'ASC']] }] 
+        },
+        { 
+          model: Client, 
+          as: 'authorizedClients', 
+          through: { attributes: [] } 
+        },
+        {
+          model: MasterClient, // Inclui o MasterClient
+          as: 'masterClient',
+          attributes: ['id', 'name']
+        }
       ],
     });
     if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
@@ -328,6 +402,7 @@ router.get('/:id', ensureAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /:campaignId/creative-lines
 router.get('/:campaignId/creative-lines', ensureAuth, async (req, res, next) => {
   try {
     const { campaignId } = req.params;
@@ -342,6 +417,7 @@ router.get('/:campaignId/creative-lines', ensureAuth, async (req, res, next) => 
   } catch (error) { next(error); }
 });
 
+// POST /:campaignId/creative-lines
 router.post('/:campaignId/creative-lines', ensureAuth, async (req, res, next) => {
   try {
     const { campaignId } = req.params;
@@ -354,6 +430,7 @@ router.post('/:campaignId/creative-lines', ensureAuth, async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
+// POST /:campaignId/upload (Upload Local)
 router.post('/:campaignId/upload', ensureAuth, handleUpload, async (req, res, next) => {
   try {
     const { campaignId } = req.params;
@@ -365,8 +442,12 @@ router.post('/:campaignId/upload', ensureAuth, handleUpload, async (req, res, ne
     if (!Number.isInteger(currentMaxOrder)) currentMaxOrder = -1;
     const pieces = await Promise.all(
       req.files.map((file, index) => Piece.create({
-        filename: file.filename, originalName: file.originalname, mimetype: file.mimetype,
-        size: file.size, status: 'uploaded', CreativeLineId: line.id,
+        filename: file.filename, // Salva o nome do arquivo local
+        originalName: file.originalname, 
+        mimetype: file.mimetype,
+        size: file.size, 
+        status: 'pending', // *** NOVO STATUS PADRÃO: pending ***
+        CreativeLineId: line.id,
         order: currentMaxOrder + index + 1,
       }))
     );
@@ -374,36 +455,80 @@ router.post('/:campaignId/upload', ensureAuth, handleUpload, async (req, res, ne
   } catch (error) { next(error); }
 });
 
+
+// POST /:campaignId/import-from-drive (*** ROTA MODIFICADA ***)
 router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next) => {
   try {
     const { campaignId } = req.params;
     const creativeLineId = req.query.creativeLineId || req.body.creativeLineId;
     const { files } = req.body;
+    
+    // 1. Pega o Access Token do Google da sessão do usuário Suno
+    const userAccessToken = req.session?.accessToken;
+    if (!userAccessToken) {
+        return res.status(401).json({ error: 'Token de acesso ao Google Drive não encontrado. Faça login novamente.' });
+    }
+
     if (!creativeLineId) return res.status(400).json({ error: 'O ID da Linha Criativa é obrigatório.' });
     if (!Array.isArray(files) || files.length === 0) return res.status(400).json({ error: 'Nenhum arquivo do Drive informado.' });
+
     const creativeLine = await CreativeLine.findOne({ where: { id: creativeLineId, CampaignId: campaignId } });
     if (!creativeLine) return res.status(404).json({ error: 'Linha Criativa não encontrada.' });
-    const savedPieces = [];
+
     let maxOrder = await Piece.max('order', { where: { CreativeLineId: creativeLine.id } });
     let nextOrder = Number.isInteger(maxOrder) ? maxOrder + 1 : 0;
+    
+    const savedPieces = [];
+    
     for (const file of files) {
-      const [piece, created] = await Piece.findOrCreate({
-        where: { driveId: file.id },
-        defaults: {
-          originalName: file.name, mimetype: file.mimeType || 'application/octet-stream',
-          status: 'imported', CreativeLineId: creativeLine.id, driveId: file.id, size: file.size || null,
-          order: nextOrder,
-        }
-      });
-      if (created) {
-        savedPieces.push(piece);
-        nextOrder += 1;
+      // 2. Cria um "pseudo-piece" para a função getFileData
+      const pseudoPiece = {
+        driveId: file.id,
+        mimetype: file.mimeType || 'application/octet-stream',
+        originalName: file.name
+      };
+
+      // 3. Baixa e processa o arquivo do Drive (converte, etc.)
+      const fileData = await getFileData(pseudoPiece, userAccessToken);
+
+      if (!fileData || !fileData.buffer) {
+        console.warn(`Falha ao baixar ou processar arquivo do Drive: ${file.name}`);
+        continue; // Pula este arquivo
       }
+
+      // 4. Gera um nome de arquivo local único
+      const fileExtension = mime.extension(fileData.mimetype) || 'bin';
+      const localFilename = `${crypto.randomUUID()}.${fileExtension}`;
+      const localFilePath = path.join(uploadDir, localFilename);
+
+      // 5. Salva o buffer baixado no disco local (pasta /uploads)
+      await fs.promises.writeFile(localFilePath, fileData.buffer);
+
+      // 6. Cria a peça no banco de dados com o NOVO filename local
+      const newPiece = await Piece.create({
+          originalName: file.name,
+          mimetype: fileData.mimetype,
+          size: fileData.size,
+          driveId: file.id, // Mantém o driveId para referência futura (ex: exportar PPT)
+          filename: localFilename, // *** SALVA O NOME DO ARQUIVO LOCAL ***
+          status: 'pending', // *** NOVO STATUS PADRÃO: pending ***
+          CreativeLineId: creativeLine.id,
+          order: nextOrder,
+      });
+
+      savedPieces.push(newPiece);
+      nextOrder += 1;
     }
+    
     res.status(201).json({ saved: savedPieces });
-  } catch (error) { next(error); }
+  } catch (error) { 
+    console.error("Erro no import-from-drive:", error);
+    next(error); 
+  }
 });
 
+
+// DELETE /:id (Deletar Campanha)
 router.delete('/:id', ensureAuth, async (req, res, next) => {
   try {
     const campaign = await Campaign.findOne({
@@ -417,6 +542,7 @@ router.delete('/:id', ensureAuth, async (req, res, next) => {
 
     if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada.' });
 
+    // Coleta todos os 'filenames' locais para apagar
     const filesToRemove = [];
     campaign.creativeLines?.forEach((line) => {
       line.pieces?.forEach((piece) => {
@@ -426,13 +552,15 @@ router.delete('/:id', ensureAuth, async (req, res, next) => {
       });
     });
 
+    // Deleta a campanha (em cascata deletará linhas e peças do DB)
     await campaign.destroy();
 
+    // Tenta apagar os arquivos locais
     await Promise.all(filesToRemove.map(async (filePath) => {
       try {
         await fs.promises.unlink(filePath);
       } catch (err) {
-        if (err.code !== 'ENOENT') {
+        if (err.code !== 'ENOENT') { // Ignora se o arquivo não existir
           console.warn(`Falha ao remover arquivo ${filePath}:`, err.message);
         }
       }
@@ -442,10 +570,11 @@ router.delete('/:id', ensureAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ================== ROTA DE EXPORTAÇÃO DE PPT (FINALÍSSIMA) ==================
 
+// GET /:id/export-ppt (Exportar PPTX)
 router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
   try {
+    // Token de acesso da sessão do usuário Suno
     const userAccessToken = req.session?.accessToken;
     if (!userAccessToken) {
         return res.status(403).json({ error: 'Autenticação com Google Drive não encontrada. Por favor, reconecte.' });
@@ -453,10 +582,17 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
 
     const campaign = await Campaign.findOne({
       where: { id: req.params.id, createdBy: req.user.id },
-      include: [{
-        model: CreativeLine, as: 'creativeLines', order: [['createdAt', 'ASC']],
-        include: [{ model: Piece, as: 'pieces', order: [['order', 'ASC'], ['createdAt', 'ASC']] }],
-      }],
+      include: [
+        {
+          model: MasterClient, // Inclui MasterClient
+          as: 'masterClient',
+          attributes: ['name']
+        },
+        {
+          model: CreativeLine, as: 'creativeLines', order: [['createdAt', 'ASC']],
+          include: [{ model: Piece, as: 'pieces', order: [['order', 'ASC'], ['createdAt', 'ASC']] }],
+        }
+      ],
     });
 
     if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
@@ -518,10 +654,13 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
           const isVideo = (piece.mimetype || '').startsWith('video/');
           
           if (isImage || isVideo) {
+            // *** getFileData AGORA busca local OU drive ***
+            // Passamos o 'piece' inteiro (que tem 'filename' ou 'driveId')
             const fileData = await getFileData(piece, userAccessToken);
-            if (fileData?.skip) {
+            
+            if (fileData?.skipPPT) { // Verifica a nova flag
               slidePeca.addText(
-                fileData.reason || 'Arquivo muito grande para ser incluído no PPT. Baixe diretamente pela plataforma.',
+                fileData.reason || 'Arquivo muito grande para ser incluído no PPT.',
                 {
                   x: 3.5,
                   y: 2.2,
@@ -535,7 +674,7 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
               );
               continue;
             }
-            if (fileData) {
+            if (fileData && fileData.base64) {
               const area = { w: 6.0, h: 4.5 };
               let mediaDims = { w: area.w, h: area.h }; // Default to área inteira
 
@@ -565,10 +704,10 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
                 slidePeca.addMedia({ ...mediaOptions, type: 'video' });
               }
             } else {
-              slidePeca.addText(`[Falha ao carregar: "${piece.originalName}"]`, { placeholder: 'media', align: 'center', color: 'C00000' });
+              slidePeca.addText(`[Falha ao carregar: "${piece.originalName}"]`, { x: 3.5, y: 2.5, w: 6.0, h: 0.5, align: 'center', color: 'C00000' });
             }
           } else {
-            slidePeca.addText(`[Pré-visualização não disponível para "${piece.originalName}"]`, { placeholder: 'media', align: 'center', color: '6c757d' });
+            slidePeca.addText(`[Pré-visualização não disponível para "${piece.originalName}"]`, { x: 3.5, y: 2.5, w: 6.0, h: 0.5, align: 'center', color: '6c757d' });
           }
         }
       }

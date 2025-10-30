@@ -376,8 +376,6 @@ const HomePage = ({ googleAccessToken }) => {
     const [creativeLines, setCreativeLines] = useState([]);
     const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(true);
     const [isLoadingCreativeLines, setIsLoadingCreativeLines] = useState(false);
-    const [clientList, setClientList] = useState([]);
-    const [isLoadingClients, setIsLoadingClients] = useState(true);
     
     const [isCampaignModalOpen, setCampaignModalOpen] = useState(false);
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -385,7 +383,9 @@ const HomePage = ({ googleAccessToken }) => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [isHelpModalOpen, setHelpModalOpen] = useState(false);
     const [isEditingCampaign, setIsEditingCampaign] = useState(false);
-    const [campaignDraft, setCampaignDraft] = useState({ name: "", client: "" });
+    const [campaignDraft, setCampaignDraft] = useState({ name: "", MasterClientId: "" });
+    const [masterClientsForEdit, setMasterClientsForEdit] = useState([]);
+    const [isLoadingMasterClientsForEdit, setIsLoadingMasterClientsForEdit] = useState(false);
     const [isSavingCampaign, setIsSavingCampaign] = useState(false);
     const [campaignDeleteTarget, setCampaignDeleteTarget] = useState(null);
     const [isDeletingCampaign, setIsDeletingCampaign] = useState(false);
@@ -411,22 +411,6 @@ const HomePage = ({ googleAccessToken }) => {
         useSensor(TouchSensor, { pressDelay: 150, activationConstraint: { distance: 6 } })
     );
     
-    useEffect(() => {
-        const fetchClients = async () => {
-          try {
-            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/clients`, { credentials: "include" });
-            if (!res.ok) throw new Error("Falha ao buscar clientes.");
-            const data = await res.json();
-            setClientList(data.filter(client => client.isActive));
-          } catch (error) {
-            toast.error(error.message);
-          } finally {
-            setIsLoadingClients(false);
-          }
-        };
-
-        fetchClients();
-    }, []);
 
     const fetchCampaigns = useCallback(async () => {
         setIsLoadingCampaigns(true);
@@ -480,7 +464,7 @@ const HomePage = ({ googleAccessToken }) => {
     useEffect(() => {
         setIsEditingCampaign(false);
         setIsSavingCampaign(false);
-        setCampaignDraft({ name: "", client: "" });
+        setCampaignDraft({ name: "", MasterClientId: "" });
         setCampaignDeleteTarget(null);
         setIsDeletingCampaign(false);
         setEditingLineId(null);
@@ -515,6 +499,7 @@ const HomePage = ({ googleAccessToken }) => {
         const loadingToast = toast.loading(`Enviando para ${clientIds.length} cliente(s)...`);
 
         try {
+            let lastResponseData = null;
             for (const clientId of clientIds) {
                 const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/clients/assign-campaign`, {
                     method: "POST",
@@ -524,12 +509,27 @@ const HomePage = ({ googleAccessToken }) => {
                 });
 
                 if (!res.ok) {
-                    throw new Error(`Falha ao atribuir cliente ID: ${clientId}`);
+                    const message = await parseErrorMessage(res, `Falha ao atribuir cliente ID: ${clientId}`);
+                    throw new Error(message);
                 }
+                lastResponseData = await res.json();
             }
 
             toast.success("Campanha enviada para aprovação com sucesso!", { id: loadingToast });
             setClientSelectionModalOpen(false);
+            setCampaigns(prevCampaigns =>
+                prevCampaigns.map(c => {
+                    if (c.id !== selectedCampaignId) return c;
+                    const nextStatus = lastResponseData?.campaignStatus || 'sent_for_approval';
+                    const sentForApprovalAt =
+                        lastResponseData?.sentForApprovalAt || c.sentForApprovalAt || null;
+                    return {
+                        ...c,
+                        status: nextStatus,
+                        sentForApprovalAt,
+                    };
+                })
+            );
         } catch (error) {
             toast.error(error.message || "Não foi possível enviar a campanha para os clientes selecionados.", { id: loadingToast });
         }
@@ -875,11 +875,31 @@ const HomePage = ({ googleAccessToken }) => {
         }
     }, [persistPiecesOrder, dragState, handlePieceDragCancel, isSelectionMode, editingPieceId]);
 
+    const fetchMasterClientsForEdit = useCallback(async () => {
+        if (masterClientsForEdit.length > 0) return;
+        setIsLoadingMasterClientsForEdit(true);
+        try {
+            const response = await api.get("/master-clients");
+            setMasterClientsForEdit(response.data || []);
+        } catch (err) {
+            console.error("Erro ao buscar Master Clients para edição:", err);
+            toast.error("Não foi possível carregar a lista de empresas cliente.");
+            setMasterClientsForEdit([]);
+        } finally {
+            setIsLoadingMasterClientsForEdit(false);
+        }
+    }, [masterClientsForEdit.length]);
+
     const startCampaignEdit = () => {
         if (!selectedCampaign) return;
+        fetchMasterClientsForEdit();
+        const draftMasterClientId =
+            selectedCampaign.MasterClientId ??
+            selectedCampaign.masterClient?.id ??
+            "";
         setCampaignDraft({
             name: selectedCampaign.name || "",
-            client: selectedCampaign.client || "",
+            MasterClientId: draftMasterClientId ? String(draftMasterClientId) : "",
         });
         setIsEditingCampaign(true);
     };
@@ -887,7 +907,7 @@ const HomePage = ({ googleAccessToken }) => {
     const cancelCampaignEdit = () => {
         if (isSavingCampaign) return;
         setIsEditingCampaign(false);
-        setCampaignDraft({ name: "", client: "" });
+        setCampaignDraft({ name: "", MasterClientId: "" });
     };
 
     const handleCampaignEditSubmit = async (e) => {
@@ -895,9 +915,9 @@ const HomePage = ({ googleAccessToken }) => {
         if (!selectedCampaignId) return;
 
         const name = campaignDraft.name.trim();
-        const client = campaignDraft.client.trim();
-        if (!name || !client) {
-            toast.error("Nome e cliente são obrigatórios.");
+        const masterClientId = campaignDraft.MasterClientId;
+        if (!name || !masterClientId) {
+            toast.error("Nome e Empresa Cliente são obrigatórios.");
             return;
         }
 
@@ -908,16 +928,35 @@ const HomePage = ({ googleAccessToken }) => {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({ name, client }),
+                body: JSON.stringify({ name, MasterClientId: parseInt(masterClientId, 10) }),
             });
             if (!res.ok) {
                 const message = await parseErrorMessage(res, "Não foi possível atualizar a campanha.");
                 throw new Error(message);
             }
-            const updatedCampaign = await res.json();
-            setCampaigns(prev => prev.map(c => c.id === updatedCampaign.id ? { ...c, ...updatedCampaign } : c));
+            const updatedCampaignResult = await res.json();
+            const updatedMasterClient =
+                masterClientsForEdit.find((mc) => mc.id === updatedCampaignResult.MasterClientId) ||
+                updatedCampaignResult.masterClient ||
+                selectedCampaign?.masterClient ||
+                null;
+
+            setCampaigns((prev) =>
+                prev.map((c) =>
+                    c.id === updatedCampaignResult.id
+                        ? {
+                              ...c,
+                              ...updatedCampaignResult,
+                              client: updatedMasterClient?.name || c.client,
+                              masterClient: updatedMasterClient
+                                  ? { id: updatedMasterClient.id, name: updatedMasterClient.name }
+                                  : c.masterClient,
+                          }
+                        : c
+                )
+            );
             setIsEditingCampaign(false);
-            setCampaignDraft({ name: "", client: "" });
+            setCampaignDraft({ name: "", MasterClientId: "" });
             toast.success("Campanha atualizada!", { id: loadingToast });
         } catch (error) {
             toast.error(error.message || "Erro ao atualizar a campanha.", { id: loadingToast });
@@ -1095,11 +1134,33 @@ const HomePage = ({ googleAccessToken }) => {
                                                     <input type="text" value={campaignDraft.name} onChange={(e) => setCampaignDraft((prev) => ({ ...prev, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none" placeholder="Nome da campanha" />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-semibold text-slate-600 mb-2">Cliente</label>
-                                                    <select value={campaignDraft.client} onChange={(e) => setCampaignDraft((prev) => ({ ...prev, client: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none bg-no-repeat bg-right pr-8" style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1.5em 1.5em' }}>
-                                                        <option value="" disabled>Selecione um cliente</option>
-                                                        {clientList.map(c => (
-                                                            <option key={c.id} value={c.company || c.name}>{c.company || c.name}</option>
+                                                    <label className="block text-sm font-semibold text-slate-600 mb-2">Empresa Cliente</label>
+                                                    <select
+                                                        value={campaignDraft.MasterClientId}
+                                                        onChange={(e) =>
+                                                            setCampaignDraft((prev) => ({
+                                                                ...prev,
+                                                                MasterClientId: e.target.value,
+                                                            }))
+                                                        }
+                                                        className="w-full p-3 border border-slate-300 rounded-xl bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none bg-no-repeat bg-right pr-8 disabled:opacity-50 disabled:bg-slate-50"
+                                                        style={{
+                                                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                                                            backgroundPosition: "right 0.5rem center",
+                                                            backgroundSize: "1.5em 1.5em",
+                                                        }}
+                                                        required
+                                                        disabled={isLoadingMasterClientsForEdit}
+                                                    >
+                                                        <option value="" disabled>
+                                                            {isLoadingMasterClientsForEdit
+                                                                ? "Carregando empresas..."
+                                                                : "Selecione uma empresa"}
+                                                        </option>
+                                                        {masterClientsForEdit.map((mc) => (
+                                                            <option key={mc.id} value={mc.id}>
+                                                                {mc.name}
+                                                            </option>
                                                         ))}
                                                     </select>
                                                 </div>
@@ -1108,7 +1169,16 @@ const HomePage = ({ googleAccessToken }) => {
                                                 <button type="button" onClick={cancelCampaignEdit} disabled={isSavingCampaign} className="px-5 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:text-slate-800 hover:border-slate-400 transition-colors disabled:opacity-50">
                                                     Cancelar
                                                 </button>
-                                                <button type="submit" disabled={isSavingCampaign} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50">
+                                                <button
+                                                    type="submit"
+                                                    disabled={
+                                                        isSavingCampaign ||
+                                                        isLoadingMasterClientsForEdit ||
+                                                        !campaignDraft.name ||
+                                                        !campaignDraft.MasterClientId
+                                                    }
+                                                    className="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
+                                                >
                                                     {isSavingCampaign ? "Salvando..." : "Salvar alterações"}
                                                 </button>
                                             </div>
@@ -1319,6 +1389,7 @@ const HomePage = ({ googleAccessToken }) => {
                 onClose={() => setClientSelectionModalOpen(false)}
                 onConfirm={handleAssignClients}
                 campaignName={selectedCampaign?.name || ""}
+                masterClientId={selectedCampaign?.MasterClientId}
             />
             {isExportingPpt && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
