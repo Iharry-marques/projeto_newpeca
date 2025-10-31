@@ -98,7 +98,8 @@ router.get('/drive/:pieceId', ensureAuth, async (req, res, next) => {
     });
 
     // Validações de segurança
-    if (!piece || !piece.driveId) {
+    const effectiveDriveId = piece?.driveFileId || piece?.driveId;
+    if (!piece || !effectiveDriveId) {
       return res.status(404).json({ error: 'Peça não encontrada ou não é um arquivo do Drive.' });
     }
     if (piece.creativeLine?.campaign?.createdBy !== req.user.id) {
@@ -106,7 +107,7 @@ router.get('/drive/:pieceId', ensureAuth, async (req, res, next) => {
     }
 
     // Faz a requisição autenticada para a API do Google Drive
-    const driveUrl = `https://www.googleapis.com/drive/v3/files/${piece.driveId}?alt=media`;
+    const driveUrl = `https://www.googleapis.com/drive/v3/files/${effectiveDriveId}?alt=media`;
     const driveResponse = await fetch(driveUrl, {
       headers: { 'Authorization': `Bearer ${userAccessToken}` }
     });

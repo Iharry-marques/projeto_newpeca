@@ -109,6 +109,7 @@ async function getFileData(piece, accessToken) {
   try {
     let fileBuffer;
     let sourceMimetype = piece.mimetype; // Mimetype original
+    const effectiveDriveId = piece.driveFileId || piece.driveId;
 
     if (piece.filename) {
       // É um arquivo local, apenas leia
@@ -116,9 +117,9 @@ async function getFileData(piece, accessToken) {
       if (fs.existsSync(filePath)) {
         fileBuffer = await fs.promises.readFile(filePath);
       }
-    } else if (piece.driveId && accessToken) {
+    } else if (effectiveDriveId && accessToken) {
       // É um arquivo do Drive, baixe-o
-      const driveUrl = `https://www.googleapis.com/drive/v3/files/${piece.driveId}?alt=media`;
+      const driveUrl = `https://www.googleapis.com/drive/v3/files/${effectiveDriveId}?alt=media`;
       const response = await fetch(driveUrl, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
@@ -129,7 +130,7 @@ async function getFileData(piece, accessToken) {
       // Vamos confiar no 'piece.mimetype' se ele existir.
       sourceMimetype = piece.mimetype || response.headers.get('content-type') || 'application/octet-stream';
 
-    } else if (piece.driveId && !accessToken) {
+    } else if (effectiveDriveId && !accessToken) {
         // Caso especial: import-from-drive precisa do token, export-ppt também.
         throw new Error('Access Token do Google Drive não fornecido para peça do Drive.');
     }
@@ -202,7 +203,7 @@ async function getFileData(piece, accessToken) {
     }
     return null;
   } catch (error) {
-    console.error(`Erro ao processar a peça ${piece.originalName} (ID: ${piece.id || piece.driveId}):`, error.message);
+    console.error(`Erro ao processar a peça ${piece.originalName} (ID: ${piece.id || piece.driveFileId || piece.driveId}):`, error.message);
     return null;
   }
 }
@@ -481,9 +482,10 @@ router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next)
     const savedPieces = [];
     
     for (const file of files) {
+      const googleFileId = file.id;
       // 2. Cria um "pseudo-piece" para a função getFileData
       const pseudoPiece = {
-        driveId: file.id,
+        driveId: googleFileId,
         mimetype: file.mimeType || 'application/octet-stream',
         originalName: file.name
       };
@@ -509,7 +511,8 @@ router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next)
           originalName: file.name,
           mimetype: fileData.mimetype,
           size: fileData.size,
-          driveId: file.id, // Mantém o driveId para referência futura (ex: exportar PPT)
+          driveId: `${googleFileId}::${crypto.randomUUID()}`, // garante unicidade mesmo reutilizando o arquivo
+          driveFileId: googleFileId, // guarda o ID real do Google Drive
           filename: localFilename, // *** SALVA O NOME DO ARQUIVO LOCAL ***
           status: 'pending', // *** NOVO STATUS PADRÃO: pending ***
           CreativeLineId: creativeLine.id,

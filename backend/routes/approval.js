@@ -44,7 +44,7 @@ router.get('/campaigns/review/:hash', async (req, res, next) => {
                 status: { [Op.in]: ['pending', 'approved', 'needs_adjustment', 'critical_points'] },
                 filename: { [Op.not]: null } // *** GARANTE QUE SÓ PEÇAS COM ARQUIVO LOCAL SEJAM MOSTRADAS ***
             },
-            attributes: ['id', 'filename', 'originalName', 'mimetype', 'size', 'status', 'comment', 'reviewedAt', 'createdAt', 'driveId', 'order'],
+            attributes: ['id', 'filename', 'originalName', 'mimetype', 'size', 'status', 'comment', 'reviewedAt', 'createdAt', 'driveId', 'driveFileId', 'order'],
             required: false
           }
         }

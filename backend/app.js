@@ -21,7 +21,8 @@ const filesRoutes = require("./routes/files");
 const clientManagementRoutes = require("./routes/clientManagement");
 const clientAuthRoutes = require("./routes/clientAuth");
 const approvalRoutes = require("./routes/approval");
-const { sequelize } = require("./models");
+const { sequelize, Piece } = require("./models");
+const { Op, col } = require("sequelize");
 const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
@@ -83,6 +84,15 @@ const PORT = process.env.PORT || 3000;
 async function start() {
   try {
     await sequelize.sync({ alter: true });
+    await Piece.update(
+      { driveFileId: col('driveId') },
+      {
+        where: {
+          driveId: { [Op.ne]: null },
+          driveFileId: null,
+        },
+      }
+    );
     app.listen(PORT, () => {
       console.log(`[SUCESSO] Servidor rodando na porta ${PORT}`);
       console.log(`[INFO] Ambiente: ${process.env.NODE_ENV || "development"}`);

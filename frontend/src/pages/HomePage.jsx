@@ -13,6 +13,7 @@ import DriveImportButton from "../components/DriveImportButton";
 import CampaignSidebar from "../components/CampaignSidebar";
 import HelpModal from "../components/HelpModal";
 import ClientSelectionModal from "../components/ClientSelectionModal";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 // =================== COMPONENTES INTERNOS ===================
 
@@ -76,11 +77,26 @@ const FilePopup = ({ file, onClose }) => {
 
 const FileUpload = ({ onFilesAdded, driveButton, lineId, maxFileSizeMb }) => {
     const [isDragging, setIsDragging] = useState(false);
-    const handleDrop = useCallback((e) => { e.preventDefault(); setIsDragging(false); onFilesAdded(Array.from(e.dataTransfer.files), lineId); }, [onFilesAdded, lineId]);
-    const handleDragOver = useCallback((e) => { e.preventDefault(); setIsDragging(true); }, []);
+    const handleDrop = useCallback((e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        onFilesAdded(Array.from(e.dataTransfer.files), lineId);
+    }, [onFilesAdded, lineId]);
+    const handleDragOver = useCallback((e) => {
+        e.preventDefault();
+        setIsDragging(true);
+    }, []);
     const handleDragLeave = useCallback(() => setIsDragging(false), []);
-    const handleFileInput = useCallback((e) => { onFilesAdded(Array.from(e.target.files), lineId); e.target.value = null; }, [onFilesAdded, lineId]);
-    return <div className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-all duration-300 ${isDragging ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-slate-50 hover:border-slate-400"}`} onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
+    const handleFileInput = useCallback((e) => {
+        onFilesAdded(Array.from(e.target.files), lineId);
+        e.target.value = null;
+    }, [onFilesAdded, lineId]);
+
+    const containerClasses = `relative border-2 border-dashed rounded-xl p-6 text-center transition-all duration-300 ${
+        isDragging ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-slate-50 hover:border-slate-400"
+    }`;
+
+    return <div className={containerClasses} onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
         <div className="flex flex-col items-center">
              <Upload className="h-8 w-8 text-slate-400 mb-2" />
             <p className="text-sm text-slate-600 font-medium">Arraste e solte ou <label htmlFor={`file-input-${lineId}`} className="font-semibold text-blue-600 hover:text-blue-800 cursor-pointer">selecione os arquivos</label></p>
@@ -405,6 +421,7 @@ const HomePage = ({ googleAccessToken }) => {
     const [isSavingPieceName, setIsSavingPieceName] = useState(false);
     const [isExportingPpt, setIsExportingPpt] = useState(false);
     const [isClientSelectionModalOpen, setClientSelectionModalOpen] = useState(false);
+    const [uploadingLineId, setUploadingLineId] = useState(null);
 
     const sensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
@@ -483,9 +500,18 @@ const HomePage = ({ googleAccessToken }) => {
         setIsSavingPieceName(false);
         setSidebarOpen(false);
         setIsExportingPpt(false);
+        setUploadingLineId(null);
     }, [selectedCampaignId]);
 
     const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId);
+    const loadingText = useMemo(() => {
+        if (!uploadingLineId) return "Processando arquivos...";
+        const line = creativeLines.find((item) => item.id === uploadingLineId);
+        if (line?.name) {
+            return `Processando arquivos da pasta "${line.name}"...`;
+        }
+        return "Processando arquivos...";
+    }, [creativeLines, uploadingLineId]);
 
     const handleCampaignCreated = (newCampaign) => {
         setCampaigns((prev) => [newCampaign, ...prev]);
@@ -557,6 +583,10 @@ const HomePage = ({ googleAccessToken }) => {
     const handleFilesAdded = useCallback(async (newFiles, lineId) => {
         if (!lineId) return toast.error("Erro: ID da pasta não encontrado.");
         if (!newFiles || newFiles.length === 0) return;
+        if (uploadingLineId) {
+            toast.error("Por favor, aguarde o processamento atual terminar.");
+            return;
+        }
 
         const filesArray = Array.from(newFiles);
         const oversized = filesArray.filter((file) => file.size > uploadMaxBytes);
@@ -572,7 +602,7 @@ const HomePage = ({ googleAccessToken }) => {
 
         if (allowed.length === 0) return;
 
-        const loadingToast = toast.loading(`Enviando ${allowed.length} arquivo(s)...`);
+        setUploadingLineId(lineId);
         try {
             const formData = new FormData();
             allowed.forEach((file) => formData.append("files", file));
@@ -589,12 +619,14 @@ const HomePage = ({ googleAccessToken }) => {
                     ? { ...line, pieces: [...(line.pieces || []), ...pieces] }
                     : line
             ));
-            
-            toast.success(`${allowed.length} arquivo(s) enviados!`, { id: loadingToast });
+
+            toast.success(`${allowed.length} arquivo(s) enviados!`);
         } catch (error) {
-            toast.error(error.message, { id: loadingToast });
+            toast.error(error.message);
+        } finally {
+            setUploadingLineId(null);
         }
-    }, [selectedCampaignId, uploadMaxBytes, uploadMaxMb, parseErrorMessage]);
+    }, [selectedCampaignId, uploadMaxBytes, uploadMaxMb, parseErrorMessage, uploadingLineId]);
 
     const handleDriveImport = (savedPieces, lineId) => {
         if (savedPieces && savedPieces.length > 0 && lineId) {
@@ -603,7 +635,6 @@ const HomePage = ({ googleAccessToken }) => {
                     ? { ...line, pieces: [...(line.pieces || []), ...savedPieces] }
                     : line
             ));
-            toast.success(`${savedPieces.length} peça(s) importada(s) do Drive!`);
         }
     };
 
@@ -1318,20 +1349,34 @@ const HomePage = ({ googleAccessToken }) => {
                                                                 isSavingRename={isSavingPieceName}
                                                             />
                                                         ))}
-                                                <FileUpload 
-                                                    onFilesAdded={handleFilesAdded}
-                                                    lineId={line.id}
-                                                    maxFileSizeMb={uploadMaxMb}
-                                                    driveButton={
-                                                        <DriveImportButton 
-                                                            campaignId={selectedCampaignId} 
-                                                            creativeLineId={line.id} 
-                                                                    googleAccessToken={googleAccessToken}
-                                                                    onImported={(pieces) => handleDriveImport(pieces, line.id)}
-                                                                    label="Importar do Drive" 
-                                                                />
-                                                            }
-                                                        />
+                                                        {uploadingLineId && uploadingLineId !== line.id ? (
+                                                            <div className="relative border-2 border-dashed rounded-xl p-6 text-center bg-slate-100/80">
+                                                                <div className="flex flex-col items-center opacity-60">
+                                                                    <Loader2 className="h-8 w-8 text-slate-400 mb-2 animate-spin" />
+                                                                    <p className="text-sm text-slate-500 font-medium">
+                                                                        Aguarde o processamento anterior...
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <FileUpload
+                                                                onFilesAdded={handleFilesAdded}
+                                                                lineId={line.id}
+                                                                maxFileSizeMb={uploadMaxMb}
+                                                                driveButton={
+                                                                    <DriveImportButton
+                                                                        campaignId={selectedCampaignId}
+                                                                        creativeLineId={line.id}
+                                                                        googleAccessToken={googleAccessToken}
+                                                                        onImported={(pieces) => handleDriveImport(pieces, line.id)}
+                                                                        onImportStart={() => setUploadingLineId(line.id)}
+                                                                        onImportEnd={() => setUploadingLineId(null)}
+                                                                        disabled={Boolean(uploadingLineId)}
+                                                                        label="Importar do Drive"
+                                                                    />
+                                                                }
+                                                            />
+                                                        )}
                                                     </div>
                                                 </SortableContext>
                                             </section>
@@ -1391,6 +1436,7 @@ const HomePage = ({ googleAccessToken }) => {
                 campaignName={selectedCampaign?.name || ""}
                 masterClientId={selectedCampaign?.MasterClientId}
             />
+            <LoadingSpinner isOpen={Boolean(uploadingLineId)} text={loadingText} />
             {isExportingPpt && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-2xl px-8 py-6 flex flex-col items-center gap-3 text-center">

@@ -23,7 +23,11 @@ module.exports = (sequelize) => {
     driveId: {
       type: DataTypes.STRING,
       allowNull: true,
-      unique: true, // Garante que não vamos importar o mesmo arquivo duas vezes
+      // unique removido para permitir reutilizar o mesmo arquivo do Drive em múltiplas peças
+    },
+    driveFileId: {
+      type: DataTypes.STRING,
+      allowNull: true,
     },
     status: {
       type: DataTypes.ENUM('uploaded', 'attached', 'pending', 'approved', 'needs_adjustment', 'critical_points', 'imported'),

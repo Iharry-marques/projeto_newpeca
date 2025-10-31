@@ -9,6 +9,8 @@ export default function DriveImportButton({
   onImported,
   disabled: externalDisabled, 
   label = 'Importar do Google Drive',
+  onImportStart = () => {},
+  onImportEnd = () => {},
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -62,14 +64,21 @@ export default function DriveImportButton({
 
       // Callback separado para facilitar logs e try/catch
       const onPickerAction = async (data) => {
-        try {
-          if (data.action === google.picker.Action.PICKED) {
-            const picked = (data.docs || []).map((d) => ({
-              id: d.id,
-              name: d.name,
-              mimeType: d.mimeType,
-            }));
+        if (data.action === google.picker.Action.PICKED) {
+          const picked = (data.docs || []).map((d) => ({
+            id: d.id,
+            name: d.name,
+            mimeType: d.mimeType,
+          }));
 
+          if (picked.length === 0) {
+            onImportEnd();
+            return;
+          }
+
+          onImportStart();
+
+          try {
             if (import.meta.env.DEV) {
               console.log('[DriveImportButton] Itens selecionados no Picker:', picked);
               console.log('[DriveImportButton] Enviando para o backend.', {
@@ -99,14 +108,17 @@ export default function DriveImportButton({
             const json = JSON.parse(text);
             if (onImported) onImported(json.saved || []);
             toast.success(`Importação concluída: ${json.saved?.length || 0} arquivo(s).`);
-          } else if (data.action === google.picker.Action.CANCEL) {
-            if (import.meta.env.DEV) {
-              console.log('[DriveImportButton] Picker cancelado.', { campaignId, creativeLineId });
-            }
+          } catch (e) {
+            console.error('[DriveImportButton] Erro no callback do Picker:', e);
+            toast.error(e.message || 'Erro ao importar do Drive.');
+          } finally {
+            onImportEnd();
           }
-        } catch (e) {
-          console.error('[DriveImportButton] Erro no callback do Picker:', e);
-          toast.error(e.message || 'Erro ao importar do Drive.');
+        } else if (data.action === google.picker.Action.CANCEL) {
+          if (import.meta.env.DEV) {
+            console.log('[DriveImportButton] Picker cancelado.', { campaignId, creativeLineId });
+          }
+          onImportEnd();
         }
       };
 
