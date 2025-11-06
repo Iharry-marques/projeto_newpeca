@@ -3,9 +3,13 @@ const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
   const Piece = sequelize.define('Piece', {
-    filename: {
+    storageKey: {
       type: DataTypes.STRING,
-      // Não é mais obrigatório, pois podemos ter peças só do Drive
+      allowNull: true,
+      field: 'filename', // mantém o nome da coluna existente
+    },
+    storageUrl: {
+      type: DataTypes.STRING(1024),
       allowNull: true,
     },
     originalName: {
@@ -47,6 +51,10 @@ module.exports = (sequelize) => {
       type: DataTypes.INTEGER,
       defaultValue: 0,
     },
+    expiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     CreativeLineId: {
       type: DataTypes.INTEGER,
       allowNull: false,
@@ -56,6 +64,30 @@ module.exports = (sequelize) => {
       }
     }
   });
+
+  // Backwards compatibility: permite acessar piece.filename
+  Object.defineProperty(Piece.prototype, 'filename', {
+    get() {
+      return this.getDataValue('storageKey');
+    },
+    set(value) {
+      this.setDataValue('storageKey', value);
+    },
+  });
+
+  const originalToJSON = Piece.prototype.toJSON;
+  Piece.prototype.toJSON = function toJSON() {
+    const data = originalToJSON ? originalToJSON.call(this) : { ...this.get() };
+    const storageKey = data.storageKey ?? data.filename ?? null;
+    const storageUrl = data.storageUrl ?? null;
+    return {
+      ...data,
+      storageKey,
+      storageUrl,
+      filename: data.filename ?? storageKey ?? null,
+      downloadUrl: data.downloadUrl ?? storageUrl ?? null,
+    };
+  };
 
   return Piece;
 };

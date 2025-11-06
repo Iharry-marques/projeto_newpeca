@@ -7,6 +7,10 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
+const multerS3 = require('multer-s3');
+const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { Upload } = require('@aws-sdk/lib-storage');
+const { PassThrough } = require('stream');
 const { Op } = require('sequelize');
 const PptxGenJS = require('pptxgenjs');
 const fetch = require('node-fetch');
@@ -22,16 +26,36 @@ const {
 } = require('../utils/media');
 
 // --- Configuração e Funções Auxiliares ---
-const uploadDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
 const UPLOAD_MAX_FILE_BYTES = Number(process.env.UPLOAD_MAX_FILE_BYTES || 200 * 1024 * 1024); // ~200MB
 const UPLOAD_MAX_FILE_MB = Math.round(UPLOAD_MAX_FILE_BYTES / (1024 * 1024));
 const PPT_MAX_MEDIA_BYTES = Number(process.env.PPT_MAX_MEDIA_BYTES || 40 * 1024 * 1024); // ~40MB
+const DEFAULT_TTL_DAYS = Number(process.env.R2_DEFAULT_TTL_DAYS || 90);
+const LEGACY_UPLOAD_DIR = path.join(__dirname, '../uploads');
+
+const s3Client = new S3Client({
+  endpoint: process.env.R2_ENDPOINT,
+  region: 'auto',
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+  },
+  forcePathStyle: true,
+});
+
+const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || 'http://localhost:9000').replace(/\/$/, '');
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
 
 const upload = multer({
-  dest: uploadDir,
+  storage: multerS3({
+    s3: s3Client,
+    bucket: R2_BUCKET_NAME,
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    key: (req, file, cb) => {
+      const uniqueSuffix = crypto.randomUUID();
+      const extension = path.extname(file.originalname || '') || '';
+      cb(null, `${uniqueSuffix}${extension}`);
+    },
+  }),
   limits: { fileSize: UPLOAD_MAX_FILE_BYTES },
 });
 
@@ -85,9 +109,21 @@ function sortPieces(pieces = []) {
 
 function serializeCreativeLine(lineInstance) {
   const line = lineInstance?.toJSON ? lineInstance.toJSON() : lineInstance;
+  const pieces = sortPieces(line?.pieces || []).map((piece) => {
+    const data = piece?.toJSON ? piece.toJSON() : piece;
+    const storageKey = data.storageKey ?? data.filename ?? null;
+    const storageUrl = data.storageUrl ?? null;
+    return {
+      ...data,
+      storageKey,
+      storageUrl,
+      filename: data.filename ?? storageKey ?? null,
+      downloadUrl: data.downloadUrl ?? storageUrl ?? null,
+    };
+  });
   return {
     ...line,
-    pieces: sortPieces(line?.pieces || []),
+    pieces,
   };
 }
 
@@ -111,12 +147,20 @@ async function getFileData(piece, accessToken) {
     let sourceMimetype = piece.mimetype; // Mimetype original
     const effectiveDriveId = piece.driveFileId || piece.driveId;
 
-    if (piece.filename) {
-      // É um arquivo local, apenas leia
-      const filePath = path.join(uploadDir, piece.filename);
-      if (fs.existsSync(filePath)) {
-        fileBuffer = await fs.promises.readFile(filePath);
+    if (piece.storageUrl) {
+      const response = await fetch(piece.storageUrl);
+      if (!response.ok) {
+        throw new Error(`Falha ao buscar do R2 (${response.status}): ${response.statusText}`);
       }
+      fileBuffer = await response.buffer();
+      sourceMimetype = response.headers.get('content-type') || sourceMimetype || 'application/octet-stream';
+    } else if (piece.filename) {
+      const legacyPath = path.join(LEGACY_UPLOAD_DIR, piece.filename);
+      if (fs.existsSync(legacyPath)) {
+        fileBuffer = await fs.promises.readFile(legacyPath);
+      }
+    } else if (piece.storageKey) {
+      console.warn(`Peça ${piece.id} possui storageKey sem storageUrl. Ignorando R2 e tentando fallback.`);
     } else if (effectiveDriveId && accessToken) {
       // É um arquivo do Drive, baixe-o
       const driveUrl = `https://www.googleapis.com/drive/v3/files/${effectiveDriveId}?alt=media`;
@@ -140,7 +184,7 @@ async function getFileData(piece, accessToken) {
       let { buffer: normalizedBuffer, mimetype: resolvedMimetype } = await convertRawImageIfNeeded(fileBuffer, {
         mimetype: sourceMimetype, // Usa o mimetype de origem
         originalName: piece.originalName,
-        filename: piece.filename, // Pode ser null
+        filename: piece.storageKey || null,
       });
 
       normalizedBuffer = normalizedBuffer || fileBuffer;
@@ -158,11 +202,11 @@ async function getFileData(piece, accessToken) {
       // Comprime vídeos muito grandes (para exportação PPT)
       if ((resolvedMimetype || '').startsWith('video/')) {
         const compressed = await compressVideoIfNeeded(
-          normalizedBuffer,
-          {
-            mimetype: resolvedMimetype,
-            originalName: piece.originalName,
-            filename: piece.filename,
+            normalizedBuffer,
+            {
+              mimetype: resolvedMimetype,
+              originalName: piece.originalName,
+              filename: piece.storageKey || null,
           },
           { maxBytes: PPT_MAX_MEDIA_BYTES }
         );
@@ -188,7 +232,7 @@ async function getFileData(piece, accessToken) {
       const dimensions = await getMediaDimensions(normalizedBuffer, {
         mimetype: resolvedMimetype,
         originalName: piece.originalName,
-        filename: piece.filename,
+        filename: piece.storageKey || null,
       });
 
       return {
@@ -431,25 +475,32 @@ router.post('/:campaignId/creative-lines', ensureAuth, async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
-// POST /:campaignId/upload (Upload Local)
+// POST /:campaignId/upload (Upload Local) - AGORA É UPLOAD R2
 router.post('/:campaignId/upload', ensureAuth, handleUpload, async (req, res, next) => {
   try {
     const { campaignId } = req.params;
     const creativeLineId = req.query.creativeLineId || req.body.creativeLineId;
     const line = await CreativeLine.findOne({ where: { id: creativeLineId, CampaignId: campaignId } });
-    if (!line) return res.status(404).json({ error: 'Linha Criativa não encontrada ou não pertence à campanha.' });
+    if (!line) return res.status(404).json({ error: 'Linha Criativa não encontrada.' });
     if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+
     let currentMaxOrder = await Piece.max('order', { where: { CreativeLineId: line.id } });
     if (!Number.isInteger(currentMaxOrder)) currentMaxOrder = -1;
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 90);
+
     const pieces = await Promise.all(
       req.files.map((file, index) => Piece.create({
-        filename: file.filename, // Salva o nome do arquivo local
+        storageKey: file.key,
+        storageUrl: `${R2_PUBLIC_URL}/${R2_BUCKET_NAME}/${file.key}`,
         originalName: file.originalname, 
         mimetype: file.mimetype,
         size: file.size, 
-        status: 'pending', // *** NOVO STATUS PADRÃO: pending ***
+        status: 'pending',
         CreativeLineId: line.id,
         order: currentMaxOrder + index + 1,
+        expiresAt: expiresAt,
       }))
     );
     res.json({ success: true, pieces });
@@ -457,21 +508,17 @@ router.post('/:campaignId/upload', ensureAuth, handleUpload, async (req, res, ne
 });
 
 
-// POST /:campaignId/import-from-drive (*** ROTA MODIFICADA ***)
+// POST /:campaignId/import-from-drive (*** ROTA MODIFICADA PARA STREAM-THRU ***)
 router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next) => {
   try {
     const { campaignId } = req.params;
     const creativeLineId = req.query.creativeLineId || req.body.creativeLineId;
     const { files } = req.body;
     
-    // 1. Pega o Access Token do Google da sessão do usuário Suno
     const userAccessToken = req.session?.accessToken;
     if (!userAccessToken) {
-        return res.status(401).json({ error: 'Token de acesso ao Google Drive não encontrado. Faça login novamente.' });
+        return res.status(401).json({ error: 'Token de acesso ao Google Drive não encontrado.' });
     }
-
-    if (!creativeLineId) return res.status(400).json({ error: 'O ID da Linha Criativa é obrigatório.' });
-    if (!Array.isArray(files) || files.length === 0) return res.status(400).json({ error: 'Nenhum arquivo do Drive informado.' });
 
     const creativeLine = await CreativeLine.findOne({ where: { id: creativeLineId, CampaignId: campaignId } });
     if (!creativeLine) return res.status(404).json({ error: 'Linha Criativa não encontrada.' });
@@ -480,47 +527,65 @@ router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next)
     let nextOrder = Number.isInteger(maxOrder) ? maxOrder + 1 : 0;
     
     const savedPieces = [];
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 90);
     
     for (const file of files) {
       const googleFileId = file.id;
-      // 2. Cria um "pseudo-piece" para a função getFileData
-      const pseudoPiece = {
-        driveId: googleFileId,
-        mimetype: file.mimeType || 'application/octet-stream',
-        originalName: file.name
-      };
-
-      // 3. Baixa e processa o arquivo do Drive (converte, etc.)
-      const fileData = await getFileData(pseudoPiece, userAccessToken);
-
-      if (!fileData || !fileData.buffer) {
-        console.warn(`Falha ao baixar ou processar arquivo do Drive: ${file.name}`);
-        continue; // Pula este arquivo
+      const originalName = file.name;
+      
+      const driveUrl = `https://www.googleapis.com/drive/v3/files/${googleFileId}?alt=media`;
+      const driveResponse = await fetch(driveUrl, {
+        headers: { 'Authorization': `Bearer ${userAccessToken}` }
+      });
+      if (!driveResponse.ok) {
+         console.warn(`Falha ao baixar arquivo do Drive: ${originalName}`);
+         continue;
       }
 
-      // 4. Gera um nome de arquivo local único
-      const fileExtension = mime.extension(fileData.mimetype) || 'bin';
-      const localFilename = `${crypto.randomUUID()}.${fileExtension}`;
-      const localFilePath = path.join(uploadDir, localFilename);
+      const mimetype = file.mimeType || driveResponse.headers.get('content-type') || 'application/octet-stream';
+      const mimeExtension = mime.extension(mimetype);
+      const fileExtension = mimeExtension ? `.${mimeExtension}` : (path.extname(originalName) || '.bin');
+      const storageKey = `${crypto.randomUUID()}${fileExtension}`;
+      const fileSize = Number(driveResponse.headers.get('content-length') || file.size || null);
 
-      // 5. Salva o buffer baixado no disco local (pasta /uploads)
-      await fs.promises.writeFile(localFilePath, fileData.buffer);
+      try {
+        const pass = new PassThrough();
+        driveResponse.body.pipe(pass);
 
-      // 6. Cria a peça no banco de dados com o NOVO filename local
-      const newPiece = await Piece.create({
-          originalName: file.name,
-          mimetype: fileData.mimetype,
-          size: fileData.size,
-          driveId: `${googleFileId}::${crypto.randomUUID()}`, // garante unicidade mesmo reutilizando o arquivo
-          driveFileId: googleFileId, // guarda o ID real do Google Drive
-          filename: localFilename, // *** SALVA O NOME DO ARQUIVO LOCAL ***
-          status: 'pending', // *** NOVO STATUS PADRÃO: pending ***
-          CreativeLineId: creativeLine.id,
-          order: nextOrder,
-      });
+        const upload = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: R2_BUCKET_NAME,
+            Key: storageKey,
+            Body: pass,
+            ContentType: mimetype,
+            // acl: 'public-read', // Removido
+          },
+        });
 
-      savedPieces.push(newPiece);
-      nextOrder += 1;
+        const result = await upload.done();
+
+        const newPiece = await Piece.create({
+            originalName: originalName,
+            mimetype: mimetype,
+            size: fileSize,
+            driveId: `${googleFileId}::${crypto.randomUUID()}`,
+            driveFileId: googleFileId,
+            storageKey: result.Key,
+            storageUrl: `${R2_PUBLIC_URL}/${R2_BUCKET_NAME}/${result.Key}`,
+            status: 'pending',
+            CreativeLineId: creativeLine.id,
+            order: nextOrder,
+            expiresAt: expiresAt,
+        });
+
+        savedPieces.push(newPiece);
+        nextOrder += 1;
+        
+      } catch (uploadError) {
+        console.error(`Falha ao fazer stream para R2 do arquivo ${originalName}:`, uploadError);
+      }
     }
     
     res.status(201).json({ saved: savedPieces });
@@ -545,29 +610,34 @@ router.delete('/:id', ensureAuth, async (req, res, next) => {
 
     if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada.' });
 
-    // Coleta todos os 'filenames' locais para apagar
-    const filesToRemove = [];
-    campaign.creativeLines?.forEach((line) => {
-      line.pieces?.forEach((piece) => {
-        if (piece.filename) {
-          filesToRemove.push(path.join(uploadDir, piece.filename));
-        }
-      });
-    });
-
     // Deleta a campanha (em cascata deletará linhas e peças do DB)
     await campaign.destroy();
 
-    // Tenta apagar os arquivos locais
-    await Promise.all(filesToRemove.map(async (filePath) => {
+    // Dispara exclusão assíncrona dos objetos no R2 (não bloqueia resposta)
+    (async () => {
       try {
-        await fs.promises.unlink(filePath);
+        const deletions = [];
+        campaign.creativeLines?.forEach((line) => {
+          line.pieces?.forEach((piece) => {
+            if (piece.storageKey) {
+              deletions.push(
+                s3Client.send(
+                  new DeleteObjectCommand({
+                    Bucket: R2_BUCKET_NAME,
+                    Key: piece.storageKey,
+                  })
+                ).catch((err) => {
+                  console.warn(`Falha ao remover objeto ${piece.storageKey} do R2:`, err.message);
+                })
+              );
+            }
+          });
+        });
+        await Promise.allSettled(deletions);
       } catch (err) {
-        if (err.code !== 'ENOENT') { // Ignora se o arquivo não existir
-          console.warn(`Falha ao remover arquivo ${filePath}:`, err.message);
-        }
+        console.warn('Erro ao tentar remover objetos do R2:', err.message);
       }
-    }));
+    })();
 
     res.status(204).send();
   } catch (err) { next(err); }

@@ -123,7 +123,7 @@ router.get('/drive/:pieceId', ensureAuth, async (req, res, next) => {
       const { buffer: convertedBuffer, mimetype } = await convertRawImageIfNeeded(driveBuffer, {
         mimetype: piece.mimetype,
         originalName: piece.originalName,
-        filename: piece.filename,
+        filename: piece.storageKey,
       });
       res.setHeader('Content-Type', mimetype || contentType);
       res.send(convertedBuffer);

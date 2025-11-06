@@ -42,9 +42,12 @@ router.get('/campaigns/review/:hash', async (req, res, next) => {
             // Status que o cliente deve ver para revisar
             where: { 
                 status: { [Op.in]: ['pending', 'approved', 'needs_adjustment', 'critical_points'] },
-                filename: { [Op.not]: null } // *** GARANTE QUE SÓ PEÇAS COM ARQUIVO LOCAL SEJAM MOSTRADAS ***
+                [Op.or]: [
+                  { storageUrl: { [Op.not]: null } },
+                  { storageKey: { [Op.not]: null } }
+                ],
             },
-            attributes: ['id', 'filename', 'originalName', 'mimetype', 'size', 'status', 'comment', 'reviewedAt', 'createdAt', 'driveId', 'driveFileId', 'order'],
+            attributes: ['id', 'storageKey', 'storageUrl', 'originalName', 'mimetype', 'size', 'status', 'comment', 'reviewedAt', 'createdAt', 'driveId', 'driveFileId', 'order'],
             required: false
           }
         }
@@ -87,7 +90,8 @@ router.get('/campaigns/review/:hash', async (req, res, next) => {
         status: 'in_review', // Força 'in_review' na exibição da página
         pieces: allPieces.map(piece => ({
           id: piece.id,
-          filename: piece.filename,
+          storageKey: piece.storageKey,
+          storageUrl: piece.storageUrl,
           originalName: piece.originalName,
           mimetype: piece.mimetype,
           size: piece.size,
@@ -96,8 +100,7 @@ router.get('/campaigns/review/:hash', async (req, res, next) => {
           reviewedAt: piece.reviewedAt,
           createdAt: piece.createdAt,
           creativeLineName: piece.creativeLineName, // Passa o nome da linha
-          // Esta rota é pública e SÓ serve arquivos da pasta /uploads
-          downloadUrl: `/campaigns/files/${piece.filename}`,
+          downloadUrl: piece.storageUrl,
         })),
       },
     });

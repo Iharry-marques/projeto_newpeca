@@ -58,13 +58,11 @@ const FileTypeIcon = ({ fileType }) => {
 // Componente para visualização de arquivo
 const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
   const renderPreview = () => {
-    const imageUrl = `${import.meta.env.VITE_BACKEND_URL}${piece.downloadUrl}`;
-    
-    if (piece.mimetype.startsWith('image/')) {
+    if (piece.storageUrl && piece.mimetype.startsWith('image/')) {
       return (
         <img
-          src={imageUrl}
-          alt={piece.originalName || piece.filename}
+          src={piece.storageUrl}
+          alt={piece.originalName || piece.storageKey || piece.filename}
           className="w-full h-48 object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity"
           onClick={() => onOpenModal(piece)}
         />
@@ -107,6 +105,8 @@ const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
     );
   };
 
+  const downloadHref = piece.downloadUrl || piece.storageUrl || (piece.driveId ? `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${piece.id}` : null);
+
   const handleStatusChange = (status) => {
     onValidationChange(piece.id, { ...validation, status });
   };
@@ -126,7 +126,7 @@ const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
       <div className="mb-4 flex items-center">
         <FileTypeIcon fileType={piece.mimetype} />
         <span className="ml-2 text-sm font-semibold text-slate-700 truncate">
-          {piece.originalName || piece.filename}
+          {piece.originalName || piece.storageKey || piece.filename}
         </span>
       </div>
 
@@ -190,8 +190,9 @@ const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
         </span>
         
         <button
-          onClick={() => window.open(`${import.meta.env.VITE_BACKEND_URL}${piece.downloadUrl}`, '_blank')}
-          className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+          onClick={() => downloadHref && window.open(downloadHref, '_blank')}
+          disabled={!downloadHref}
+          className={`p-2 rounded-lg transition-colors ${downloadHref ? 'text-slate-500 hover:text-slate-700 hover:bg-slate-100' : 'text-slate-300 cursor-not-allowed'}`}
           title="Baixar arquivo"
         >
           <Download className="w-4 h-4" />
@@ -205,18 +206,18 @@ const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
 const FileModal = ({ piece, onClose }) => {
   if (!piece) return null;
 
-  const imageUrl = `${import.meta.env.VITE_BACKEND_URL}${piece.downloadUrl}`;
+  const imageUrl = piece.downloadUrl || piece.storageUrl || (piece.driveId ? `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${piece.id}` : null);
 
   const renderContent = () => {
-    if (piece.mimetype.startsWith('image/')) {
+    if (piece.mimetype.startsWith('image/') && imageUrl) {
       return (
         <img
           src={imageUrl}
-          alt={piece.originalName || piece.filename}
+          alt={piece.originalName || piece.storageKey || piece.filename}
           className="max-w-full max-h-[70vh] object-contain rounded-xl"
         />
       );
-    } else if (piece.mimetype.startsWith('video/')) {
+    } else if (piece.mimetype.startsWith('video/') && imageUrl) {
       return (
         <video
           src={imageUrl}
@@ -241,7 +242,7 @@ const FileModal = ({ piece, onClose }) => {
         <div className="flex items-center justify-between p-6 border-b border-slate-200">
           <div className="flex items-center space-x-3">
             <FileTypeIcon fileType={piece.mimetype} />
-            <h3 className="text-xl font-bold text-slate-800">{piece.originalName || piece.filename}</h3>
+            <h3 className="text-xl font-bold text-slate-800">{piece.originalName || piece.storageKey || piece.filename}</h3>
           </div>
           <button
             onClick={onClose}
@@ -255,8 +256,9 @@ const FileModal = ({ piece, onClose }) => {
         </div>
         <div className="flex justify-center p-6 border-t border-slate-200">
           <button
-            onClick={() => window.open(imageUrl, '_blank')}
-            className="px-6 py-3 bg-gradient-to-r from-[#ffc801] to-[#ffb700] text-white font-semibold rounded-xl hover:shadow-lg transition-all flex items-center space-x-2"
+            onClick={() => imageUrl && window.open(imageUrl, '_blank')}
+            disabled={!imageUrl}
+            className={`px-6 py-3 font-semibold rounded-xl flex items-center space-x-2 transition-all ${imageUrl ? 'bg-gradient-to-r from-[#ffc801] to-[#ffb700] text-white hover:shadow-lg' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
           >
             <Download className="w-5 h-5" />
             <span>Baixar Arquivo</span>

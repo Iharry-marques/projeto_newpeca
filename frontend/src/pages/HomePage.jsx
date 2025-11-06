@@ -25,12 +25,10 @@ const FileTypeIcon = ({ fileType }) => {
 
 const FileViewer = ({ file, onOpenPopup, isSelectionMode = false, isSelected = false, onSelect = () => {}, isDragging = false }) => {
     const mime = file.mimetype || "";
-    const name = file.originalName || file.filename || "arquivo";
+    const name = file.originalName || file.storageKey || file.filename || "arquivo";
     
-    let url = null;
-    if (file.filename) {
-      url = `${import.meta.env.VITE_BACKEND_URL}/campaigns/files/${file.filename}`;
-    } else if (file.driveId) {
+    let url = file.storageUrl || null;
+    if (!url && file.driveId) {
       url = `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${file.id}`;
     }
     
