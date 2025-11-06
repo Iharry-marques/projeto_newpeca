@@ -7,10 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
-const multerS3 = require('multer-s3');
-const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
-const { Upload } = require('@aws-sdk/lib-storage');
-const { PassThrough } = require('stream');
+const { S3 } = require('aws-sdk');
 const { Op } = require('sequelize');
 const PptxGenJS = require('pptxgenjs');
 const fetch = require('node-fetch');
@@ -24,6 +21,7 @@ const {
   getMediaDimensions,
   compressVideoIfNeeded,
 } = require('../utils/media');
+const { uploadToR2 } = require('../utils/s3Uploader');
 
 // --- Configuração e Funções Auxiliares ---
 const UPLOAD_MAX_FILE_BYTES = Number(process.env.UPLOAD_MAX_FILE_BYTES || 200 * 1024 * 1024); // ~200MB
@@ -32,30 +30,30 @@ const PPT_MAX_MEDIA_BYTES = Number(process.env.PPT_MAX_MEDIA_BYTES || 40 * 1024 
 const DEFAULT_TTL_DAYS = Number(process.env.R2_DEFAULT_TTL_DAYS || 90);
 const LEGACY_UPLOAD_DIR = path.join(__dirname, '../uploads');
 
-const s3Client = new S3Client({
-  endpoint: process.env.R2_ENDPOINT,
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
+
+const r2Client = new S3({
+  endpoint: R2_ACCOUNT_ID ? `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : undefined,
+  accessKeyId: R2_ACCESS_KEY_ID,
+  secretAccessKey: R2_SECRET_ACCESS_KEY,
+  signatureVersion: 'v4',
   region: 'auto',
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-  },
-  forcePathStyle: true,
 });
 
-const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || 'http://localhost:9000').replace(/\/$/, '');
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
+const streamToBuffer = async (stream) => {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+};
 
+const memoryStorage = multer.memoryStorage();
 const upload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: R2_BUCKET_NAME,
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: (req, file, cb) => {
-      const uniqueSuffix = crypto.randomUUID();
-      const extension = path.extname(file.originalname || '') || '';
-      cb(null, `${uniqueSuffix}${extension}`);
-    },
-  }),
+  storage: memoryStorage,
   limits: { fileSize: UPLOAD_MAX_FILE_BYTES },
 });
 
@@ -147,21 +145,41 @@ async function getFileData(piece, accessToken) {
     let sourceMimetype = piece.mimetype; // Mimetype original
     const effectiveDriveId = piece.driveFileId || piece.driveId;
 
-    if (piece.storageUrl) {
+    if (piece.storageKey && R2_BUCKET_NAME) {
+      try {
+        const s3Object = await r2Client.getObject({
+          Bucket: R2_BUCKET_NAME,
+          Key: piece.storageKey,
+        }).promise();
+        const body = s3Object.Body;
+        if (Buffer.isBuffer(body)) {
+          fileBuffer = body;
+        } else if (body instanceof Uint8Array) {
+          fileBuffer = Buffer.from(body);
+        } else if (body?.pipe) {
+          fileBuffer = await streamToBuffer(body);
+        }
+        if (!sourceMimetype) {
+          sourceMimetype = s3Object.ContentType || 'application/octet-stream';
+        }
+      } catch (err) {
+        console.warn(`Falha ao recuperar ${piece.storageKey} do R2:`, err.message);
+      }
+    }
+
+    if (!fileBuffer && piece.storageUrl) {
       const response = await fetch(piece.storageUrl);
       if (!response.ok) {
         throw new Error(`Falha ao buscar do R2 (${response.status}): ${response.statusText}`);
       }
       fileBuffer = await response.buffer();
       sourceMimetype = response.headers.get('content-type') || sourceMimetype || 'application/octet-stream';
-    } else if (piece.filename) {
+    } else if (!fileBuffer && piece.filename) {
       const legacyPath = path.join(LEGACY_UPLOAD_DIR, piece.filename);
       if (fs.existsSync(legacyPath)) {
         fileBuffer = await fs.promises.readFile(legacyPath);
       }
-    } else if (piece.storageKey) {
-      console.warn(`Peça ${piece.id} possui storageKey sem storageUrl. Ignorando R2 e tentando fallback.`);
-    } else if (effectiveDriveId && accessToken) {
+    } else if (!fileBuffer && effectiveDriveId && accessToken) {
       // É um arquivo do Drive, baixe-o
       const driveUrl = `https://www.googleapis.com/drive/v3/files/${effectiveDriveId}?alt=media`;
       const response = await fetch(driveUrl, {
@@ -488,21 +506,36 @@ router.post('/:campaignId/upload', ensureAuth, handleUpload, async (req, res, ne
     if (!Number.isInteger(currentMaxOrder)) currentMaxOrder = -1;
 
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 90);
+    expiresAt.setDate(expiresAt.getDate() + DEFAULT_TTL_DAYS);
 
-    const pieces = await Promise.all(
-      req.files.map((file, index) => Piece.create({
-        storageKey: file.key,
-        storageUrl: `${R2_PUBLIC_URL}/${R2_BUCKET_NAME}/${file.key}`,
-        originalName: file.originalname, 
+    const pieces = [];
+    for (let i = 0; i < req.files.length; i++) {
+      const file = req.files[i];
+      if (!file?.buffer) {
+        console.warn(`Arquivo ${file?.originalname || '(sem nome)'} chegou sem buffer, ignorando.`);
+        continue;
+      }
+
+      const { storageKey, storageUrl, size } = await uploadToR2(
+        file.buffer,
+        file.originalname,
+        file.mimetype
+      );
+
+      const newPiece = await Piece.create({
+        storageKey,
+        storageUrl,
+        originalName: file.originalname,
         mimetype: file.mimetype,
-        size: file.size, 
+        size,
         status: 'pending',
         CreativeLineId: line.id,
-        order: currentMaxOrder + index + 1,
-        expiresAt: expiresAt,
-      }))
-    );
+        order: currentMaxOrder + i + 1,
+        expiresAt,
+      });
+      pieces.push(newPiece);
+    }
+
     res.json({ success: true, pieces });
   } catch (error) { next(error); }
 });
@@ -528,7 +561,7 @@ router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next)
     
     const savedPieces = [];
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 90);
+    expiresAt.setDate(expiresAt.getDate() + DEFAULT_TTL_DAYS);
     
     for (const file of files) {
       const googleFileId = file.id;
@@ -544,36 +577,24 @@ router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next)
       }
 
       const mimetype = file.mimeType || driveResponse.headers.get('content-type') || 'application/octet-stream';
-      const mimeExtension = mime.extension(mimetype);
-      const fileExtension = mimeExtension ? `.${mimeExtension}` : (path.extname(originalName) || '.bin');
-      const storageKey = `${crypto.randomUUID()}${fileExtension}`;
-      const fileSize = Number(driveResponse.headers.get('content-length') || file.size || null);
+      const fileBuffer = await driveResponse.buffer();
+      const fileSize = fileBuffer.length || Number(driveResponse.headers.get('content-length') || file.size || null);
 
       try {
-        const pass = new PassThrough();
-        driveResponse.body.pipe(pass);
-
-        const upload = new Upload({
-          client: s3Client,
-          params: {
-            Bucket: R2_BUCKET_NAME,
-            Key: storageKey,
-            Body: pass,
-            ContentType: mimetype,
-            // acl: 'public-read', // Removido
-          },
-        });
-
-        const result = await upload.done();
+        const { storageKey, storageUrl, size } = await uploadToR2(
+          fileBuffer,
+          originalName,
+          mimetype
+        );
 
         const newPiece = await Piece.create({
             originalName: originalName,
             mimetype: mimetype,
-            size: fileSize,
+            size: size || fileSize || null,
             driveId: `${googleFileId}::${crypto.randomUUID()}`,
             driveFileId: googleFileId,
-            storageKey: result.Key,
-            storageUrl: `${R2_PUBLIC_URL}/${R2_BUCKET_NAME}/${result.Key}`,
+            storageKey,
+            storageUrl,
             status: 'pending',
             CreativeLineId: creativeLine.id,
             order: nextOrder,
@@ -584,7 +605,7 @@ router.post('/:campaignId/import-from-drive', ensureAuth, async (req, res, next)
         nextOrder += 1;
         
       } catch (uploadError) {
-        console.error(`Falha ao fazer stream para R2 do arquivo ${originalName}:`, uploadError);
+        console.error(`Falha ao enviar arquivo ${originalName} para o R2:`, uploadError);
       }
     }
     
@@ -616,17 +637,18 @@ router.delete('/:id', ensureAuth, async (req, res, next) => {
     // Dispara exclusão assíncrona dos objetos no R2 (não bloqueia resposta)
     (async () => {
       try {
+        if (!R2_BUCKET_NAME) {
+          return;
+        }
         const deletions = [];
         campaign.creativeLines?.forEach((line) => {
           line.pieces?.forEach((piece) => {
             if (piece.storageKey) {
               deletions.push(
-                s3Client.send(
-                  new DeleteObjectCommand({
-                    Bucket: R2_BUCKET_NAME,
-                    Key: piece.storageKey,
-                  })
-                ).catch((err) => {
+                r2Client.deleteObject({
+                  Bucket: R2_BUCKET_NAME,
+                  Key: piece.storageKey,
+                }).promise().catch((err) => {
                   console.warn(`Falha ao remover objeto ${piece.storageKey} do R2:`, err.message);
                 })
               );

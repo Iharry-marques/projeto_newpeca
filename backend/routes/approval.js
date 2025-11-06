@@ -79,6 +79,8 @@ router.get('/campaigns/review/:hash', async (req, res, next) => {
     // Ordena as peças pela ordem definida
     allPieces.sort((a, b) => (a.order || 0) - (b.order || 0) || new Date(a.createdAt) - new Date(b.createdAt));
 
+    const baseUrl = process.env.VITE_BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+
     res.json({
       campaign: {
         id: campaign.id,
@@ -88,20 +90,28 @@ router.get('/campaigns/review/:hash', async (req, res, next) => {
         creativeLine: campaign.creativeLine, // Legado
         sentForApprovalAt: campaign.sentForApprovalAt,
         status: 'in_review', // Força 'in_review' na exibição da página
-        pieces: allPieces.map(piece => ({
-          id: piece.id,
-          storageKey: piece.storageKey,
-          storageUrl: piece.storageUrl,
-          originalName: piece.originalName,
-          mimetype: piece.mimetype,
-          size: piece.size,
-          status: piece.status,
-          comment: piece.comment,
-          reviewedAt: piece.reviewedAt,
-          createdAt: piece.createdAt,
-          creativeLineName: piece.creativeLineName, // Passa o nome da linha
-          downloadUrl: piece.storageUrl,
-        })),
+        pieces: allPieces.map(piece => {
+          const downloadUrl = piece.storageUrl
+            ? piece.storageUrl
+            : piece.driveId
+              ? `${baseUrl}/pieces/drive/${piece.id}`
+              : null;
+          return {
+            id: piece.id,
+            storageKey: piece.storageKey,
+            storageUrl: piece.storageUrl,
+            driveId: piece.driveId,
+            originalName: piece.originalName,
+            mimetype: piece.mimetype,
+            size: piece.size,
+            status: piece.status,
+            comment: piece.comment,
+            reviewedAt: piece.reviewedAt,
+            createdAt: piece.createdAt,
+            creativeLineName: piece.creativeLineName, // Passa o nome da linha
+            downloadUrl,
+          };
+        }),
       },
     });
   } catch (error) {

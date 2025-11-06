@@ -58,10 +58,11 @@ const FileTypeIcon = ({ fileType }) => {
 // Componente para visualização de arquivo
 const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
   const renderPreview = () => {
-    if (piece.storageUrl && piece.mimetype.startsWith('image/')) {
+    const imageUrl = piece.downloadUrl || piece.storageUrl || null;
+    if (imageUrl && piece.mimetype.startsWith('image/')) {
       return (
         <img
-          src={piece.storageUrl}
+          src={imageUrl}
           alt={piece.originalName || piece.storageKey || piece.filename}
           className="w-full h-48 object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity"
           onClick={() => onOpenModal(piece)}
@@ -104,8 +105,6 @@ const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
       </div>
     );
   };
-
-  const downloadHref = piece.downloadUrl || piece.storageUrl || (piece.driveId ? `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${piece.id}` : null);
 
   const handleStatusChange = (status) => {
     onValidationChange(piece.id, { ...validation, status });
@@ -190,9 +189,9 @@ const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
         </span>
         
         <button
-          onClick={() => downloadHref && window.open(downloadHref, '_blank')}
-          disabled={!downloadHref}
-          className={`p-2 rounded-lg transition-colors ${downloadHref ? 'text-slate-500 hover:text-slate-700 hover:bg-slate-100' : 'text-slate-300 cursor-not-allowed'}`}
+          onClick={() => piece.downloadUrl && window.open(piece.downloadUrl, '_blank')}
+          disabled={!piece.downloadUrl}
+          className={`p-2 rounded-lg transition-colors ${piece.downloadUrl ? 'text-slate-500 hover:text-slate-700 hover:bg-slate-100' : 'text-slate-300 cursor-not-allowed'}`}
           title="Baixar arquivo"
         >
           <Download className="w-4 h-4" />
@@ -206,7 +205,7 @@ const FileViewer = ({ piece, validation, onValidationChange, onOpenModal }) => {
 const FileModal = ({ piece, onClose }) => {
   if (!piece) return null;
 
-  const imageUrl = piece.downloadUrl || piece.storageUrl || (piece.driveId ? `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${piece.id}` : null);
+  const imageUrl = piece.downloadUrl || piece.storageUrl || null;
 
   const renderContent = () => {
     if (piece.mimetype.startsWith('image/') && imageUrl) {

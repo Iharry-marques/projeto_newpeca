@@ -1,17 +1,32 @@
-// Em: backend/models/Piece.js (VERSÃO FINAL)
+// Em: backend/models/Piece.js (VERSÃO ATUALIZADA PARA R2)
+
 const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
   const Piece = sequelize.define('Piece', {
+    // --- CAMPOS DE ARMAZENAMENTO (NOVOS) ---
+    // storageKey: O nome único do arquivo no R2 (ex: "uuid-123.jpg")
     storageKey: {
       type: DataTypes.STRING,
-      allowNull: true,
-      field: 'filename', // mantém o nome da coluna existente
+      allowNull: true, // Permite nulo caso seja só do Drive
     },
+    // storageUrl: A URL pública completa do R2 (ex: "https://pub-....r2.dev/uuid-123.jpg")
     storageUrl: {
-      type: DataTypes.STRING(1024),
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: {
+        isUrl: true, // Garante que o valor seja uma URL válida
+      },
+    },
+
+    // --- CAMPO ANTIGO (MODIFICADO) ---
+    // filename: Não é mais usado para o caminho do disco, agora é só um fallback.
+    filename: {
+      type: DataTypes.STRING,
       allowNull: true,
     },
+    
+    // --- CAMPOS EXISTENTES (SEM MUDANÇA) ---
     originalName: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -23,15 +38,10 @@ module.exports = (sequelize) => {
       type: DataTypes.INTEGER,
       allowNull: true,
     },
-    // NOVO CAMPO para rastrear arquivos do Google Drive
     driveId: {
       type: DataTypes.STRING,
       allowNull: true,
-      // unique removido para permitir reutilizar o mesmo arquivo do Drive em múltiplas peças
-    },
-    driveFileId: {
-      type: DataTypes.STRING,
-      allowNull: true,
+      unique: true,
     },
     status: {
       type: DataTypes.ENUM('uploaded', 'attached', 'pending', 'approved', 'needs_adjustment', 'critical_points', 'imported'),
@@ -51,10 +61,6 @@ module.exports = (sequelize) => {
       type: DataTypes.INTEGER,
       defaultValue: 0,
     },
-    expiresAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
-    },
     CreativeLineId: {
       type: DataTypes.INTEGER,
       allowNull: false,
@@ -64,30 +70,6 @@ module.exports = (sequelize) => {
       }
     }
   });
-
-  // Backwards compatibility: permite acessar piece.filename
-  Object.defineProperty(Piece.prototype, 'filename', {
-    get() {
-      return this.getDataValue('storageKey');
-    },
-    set(value) {
-      this.setDataValue('storageKey', value);
-    },
-  });
-
-  const originalToJSON = Piece.prototype.toJSON;
-  Piece.prototype.toJSON = function toJSON() {
-    const data = originalToJSON ? originalToJSON.call(this) : { ...this.get() };
-    const storageKey = data.storageKey ?? data.filename ?? null;
-    const storageUrl = data.storageUrl ?? null;
-    return {
-      ...data,
-      storageKey,
-      storageUrl,
-      filename: data.filename ?? storageKey ?? null,
-      downloadUrl: data.downloadUrl ?? storageUrl ?? null,
-    };
-  };
 
   return Piece;
 };

@@ -23,13 +23,23 @@ const FileTypeIcon = ({ fileType }) => {
     return <FileIcon className="w-5 h-5 text-slate-500" />;
 };
 
-const FileViewer = ({ file, onOpenPopup, isSelectionMode = false, isSelected = false, onSelect = () => {}, isDragging = false }) => {
+const FileViewer = ({
+    file,
+    onOpenPopup,
+    isSelectionMode = false,
+    isSelected = false,
+    onSelect = () => {},
+    isDragging = false,
+    supportButton = null,
+}) => {
     const mime = file.mimetype || "";
     const name = file.originalName || file.storageKey || file.filename || "arquivo";
     
-    let url = file.storageUrl || null;
-    if (!url && file.driveId) {
-      url = `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${file.id}`;
+    let url = null;
+    if (file.storageUrl) {
+        url = file.storageUrl;
+    } else if (file.driveId) {
+        url = `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${file.id}`;
     }
     
     const handleCardClick = () => {
@@ -64,7 +74,16 @@ const FileViewer = ({ file, onOpenPopup, isSelectionMode = false, isSelected = f
 
 const FilePopup = ({ file, onClose }) => {
     if (!file) return null;
-    const { mime, name, url } = file._resolved;
+    const resolved = file._resolved || {
+        mime: file.mimetype || "",
+        name: file.originalName || file.storageKey || file.filename || "arquivo",
+        url: file.storageUrl
+            ? file.storageUrl
+            : file.driveId
+                ? `${import.meta.env.VITE_BACKEND_URL}/pieces/drive/${file.id}`
+                : null,
+    };
+    const { mime, name, url } = resolved;
     const renderContent = () => {
         if (mime.startsWith("image/") && url) return <img src={url} alt={name} className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg" />;
         if (mime.startsWith("video/") && url) return <video src={url} controls autoPlay className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg" />;
