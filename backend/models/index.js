@@ -1,28 +1,20 @@
 const { Sequelize } = require('sequelize');
+const config = require('../config').db;
 
-const connectionUri = process.env.DATABASE_URL;
 let sequelize;
 
-if (connectionUri) {
-  sequelize = new Sequelize(connectionUri, {
-    dialect: 'postgres',
-    logging: process.env.NODE_ENV === 'development' ? console.log : false,
-    dialectOptions:
-      process.env.NODE_ENV === 'production'
-        ? {
-            ssl: {
-              require: true,
-              rejectUnauthorized: false,
-            },
-          }
-        : {},
+if (config.connectionString) {
+  // Produção (Render) usa a string de conexão completa
+  sequelize = new Sequelize(config.connectionString, {
+    dialect: config.dialect || 'postgres',
+    dialectOptions: config.dialectOptions,
+    logging: false,
   });
 } else {
-  console.warn('[DB] DATABASE_URL não definida, usando config.js como fallback.');
-  const config = require('../config').db;
+  // Fallback local (ex.: SQLite)
   sequelize = new Sequelize({
-    dialect: config.dialect || 'sqlite',
-    storage: config.storage || 'database.sqlite',
+    dialect: config.dialect,
+    storage: config.storage,
     logging: false,
   });
 }
@@ -37,8 +29,8 @@ const modelDefiners = [
   require('./CreativeLine'),
 ];
 
-for (const modelDefiner of modelDefiners) {
-  modelDefiner(sequelize);
+for (const defineModel of modelDefiners) {
+  defineModel(sequelize);
 }
 
 const {
@@ -51,9 +43,11 @@ const {
   CreativeLine,
 } = sequelize.models;
 
+// User <-> Campaign
 User.hasMany(Campaign, { as: 'campaigns', foreignKey: 'createdBy' });
 Campaign.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
 
+// Campaign <-> CreativeLine
 Campaign.hasMany(CreativeLine, {
   as: 'creativeLines',
   foreignKey: 'CampaignId',
@@ -61,6 +55,7 @@ Campaign.hasMany(CreativeLine, {
 });
 CreativeLine.belongsTo(Campaign, { as: 'campaign', foreignKey: 'CampaignId' });
 
+// CreativeLine <-> Piece
 CreativeLine.hasMany(Piece, {
   as: 'pieces',
   foreignKey: 'CreativeLineId',
@@ -68,6 +63,7 @@ CreativeLine.hasMany(Piece, {
 });
 Piece.belongsTo(CreativeLine, { as: 'creativeLine', foreignKey: 'CreativeLineId' });
 
+// Campaign <-> Client (Muitos-para-Muitos)
 Campaign.belongsToMany(Client, {
   through: CampaignClient,
   as: 'authorizedClients',
@@ -81,6 +77,7 @@ Client.belongsToMany(Campaign, {
   onDelete: 'CASCADE',
 });
 
+// Piece <-> Client (Revisor)
 Piece.belongsTo(Client, {
   as: 'reviewer',
   foreignKey: 'reviewedBy',
@@ -88,6 +85,7 @@ Piece.belongsTo(Client, {
 });
 Client.hasMany(Piece, { as: 'reviewedPieces', foreignKey: 'reviewedBy' });
 
+// MasterClient relações
 MasterClient.hasMany(Campaign, {
   as: 'campaigns',
   foreignKey: 'MasterClientId',
