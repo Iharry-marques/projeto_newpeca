@@ -32,18 +32,12 @@ const allowedOrigins = (process.env.FRONTEND_URL || "")
   .filter(Boolean);
 
 async function createSessionStore() {
-  if (redisUrl && isProduction) { // Apenas tenta usar Redis em produção
+  // const redisUrl = process.env.REDIS_URL; // Ignoramos o Redis
+  const redisUrl = null; // <-- FORÇAMOS O REDIS A SER NULO
+
+  if (redisUrl && isProduction) { 
     try {
-      const redisClient = createClient({ url: redisUrl });
-      redisClient.on("error", (err) => {
-        console.error("[SESSION] Erro no Redis:", err);
-      });
-      await redisClient.connect();
-      console.log("[SESSION] Conectado ao Redis.");
-      return new RedisStore({
-        client: redisClient,
-        prefix: "sess:",
-      });
+      // ... (este bloco de código agora será pulado)
     } catch (error) {
       console.error(
         "[SESSION] Falha ao conectar no Redis. Voltando para SQLite:",
@@ -52,10 +46,11 @@ async function createSessionStore() {
     }
   }
 
+  // O código agora SEMPRE vai executar este bloco:
   console.log("[SESSION] Utilizando SQLite como store de sessão.");
   return new SQLiteStoreFactory({
     db: "database.sqlite",
-    dir: "./",
+    dir: "./", // Salva no disco persistente do Render
   });
 }
 
