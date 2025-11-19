@@ -10,7 +10,7 @@ const { Op } = require('sequelize');
 const PptxGenJS = require('pptxgenjs');
 const fetch = require('node-fetch');
 const mime = require('mime-types');
-const { Campaign, CreativeLine, Piece, Client, MasterClient } = require('../models');
+const { Campaign, CreativeLine, Piece, Client } = require('../models');
 const { ensureAuth } = require('../auth');
 const {
   convertRawImageIfNeeded,
@@ -376,11 +376,6 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
       where: { id: req.params.id, createdBy: req.user.id },
       include: [
         {
-          model: MasterClient,
-          as: 'masterClient',
-          attributes: ['name'],
-        },
-        {
           model: CreativeLine,
           as: 'creativeLines',
           order: [['createdAt', 'ASC']],
@@ -406,8 +401,9 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
     const SICREDI_GREEN = '3FA110';
     const TEXT_DARK = '0F172A';
     const BG_LIGHT = 'F8FAFC';
-    const isSicredi =
-      (campaign.masterClient?.name || '').trim().toUpperCase() === 'SICREDI';
+    const campaignClientName = (campaign.client || '').trim();
+    const normalizedClientName = campaignClientName.toUpperCase();
+    const isSicredi = normalizedClientName === 'SICREDI';
     const highlightColor = isSicredi ? SICREDI_GREEN : SUNO_YELLOW;
 
     const SICREDI_LOGO_PATH = path.join(__dirname, '../assets/sicredi-logo.svg');
