@@ -10,7 +10,7 @@ const { Op } = require('sequelize');
 const PptxGenJS = require('pptxgenjs');
 const fetch = require('node-fetch');
 const mime = require('mime-types');
-const { Campaign, CreativeLine, Piece, Client } = require('../models');
+const { Campaign, CreativeLine, Piece, Client, MasterClient } = require('../models');
 const { ensureAuth } = require('../auth');
 const {
   convertRawImageIfNeeded,
@@ -374,11 +374,27 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
 
     const campaign = await Campaign.findOne({
       where: { id: req.params.id, createdBy: req.user.id },
-      include: [{
-        model: CreativeLine, as: 'creativeLines', order: [['createdAt', 'ASC']],
-        // Importante: Puxar o campo 'comment' do modelo Piece
-        include: [{ model: Piece, as: 'pieces', order: [['order', 'ASC'], ['createdAt', 'ASC']], attributes: { include: ['comment'] } }],
-      }],
+      include: [
+        {
+          model: MasterClient,
+          as: 'masterClient',
+          attributes: ['name'],
+        },
+        {
+          model: CreativeLine,
+          as: 'creativeLines',
+          order: [['createdAt', 'ASC']],
+          // Importante: Puxar o campo 'comment' do modelo Piece
+          include: [
+            {
+              model: Piece,
+              as: 'pieces',
+              order: [['order', 'ASC'], ['createdAt', 'ASC']],
+              attributes: { include: ['comment'] },
+            },
+          ],
+        },
+      ],
     });
 
     if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
@@ -387,23 +403,103 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
     pptx.layout = 'LAYOUT_16x9';
 
     const SUNO_YELLOW = 'FFC801';
+    const SICREDI_GREEN = '3FA110';
     const TEXT_DARK = '0F172A';
     const BG_LIGHT = 'F8FAFC';
+    const isSicredi =
+      (campaign.masterClient?.name || '').trim().toUpperCase() === 'SICREDI';
+    const highlightColor = isSicredi ? SICREDI_GREEN : SUNO_YELLOW;
+
+    const SICREDI_LOGO_PATH = path.join(__dirname, '../assets/sicredi-logo.svg');
+    const sicrediLogoData =
+      isSicredi && fs.existsSync(SICREDI_LOGO_PATH)
+        ? `data:image/svg+xml;base64,${fs.readFileSync(SICREDI_LOGO_PATH, 'base64')}`
+        : null;
+    const SICREDI_LOGO_BOX = { x: 9.0, y: 0.25, w: 1.6, h: 0.6 };
+    const injectSicrediLogo = (slide) => {
+      if (!sicrediLogoData) return;
+      slide.addImage({
+        data: sicrediLogoData,
+        x: SICREDI_LOGO_BOX.x,
+        y: SICREDI_LOGO_BOX.y,
+        w: SICREDI_LOGO_BOX.w,
+        h: SICREDI_LOGO_BOX.h,
+      });
+    };
 
     // MASTER SLIDES
+    const masterTitleObjects = [
+      { rect: { x: 0, y: 3.2, w: '100%', h: 1, fill: { color: highlightColor } } },
+      {
+        placeholder: {
+          options: {
+            name: 'campaignTitle',
+            type: 'title',
+            x: 0.5,
+            y: 2.2,
+            w: 9.0,
+            h: 1,
+            fontFace: 'Montserrat',
+            fontSize: 32,
+            color: TEXT_DARK,
+            bold: true,
+          },
+          text: '',
+        },
+      },
+      {
+        placeholder: {
+          options: {
+            name: 'lineTitle',
+            type: 'body',
+            x: 0.5,
+            y: 3.4,
+            w: 9.0,
+            h: 0.6,
+            fontFace: 'Montserrat',
+            fontSize: 24,
+            color: TEXT_DARK,
+          },
+          text: '',
+        },
+      },
+    ];
+
+    if (sicrediLogoData) {
+      masterTitleObjects.push({
+        image: {
+          data: sicrediLogoData,
+          x: SICREDI_LOGO_BOX.x,
+          y: SICREDI_LOGO_BOX.y,
+          w: SICREDI_LOGO_BOX.w,
+          h: SICREDI_LOGO_BOX.h,
+        },
+      });
+    }
+
     pptx.defineSlideMaster({
       title: 'MASTER_TITLE',
       background: { color: BG_LIGHT },
-      objects: [
-        { 'rect': { x: 0, y: 3.2, w: '100%', h: 1, fill: { color: SUNO_YELLOW } } },
-        { 'placeholder': { options: { name: 'campaignTitle', type: 'title', x: 0.5, y: 2.2, w: 9.0, h: 1, fontFace: 'Montserrat', fontSize: 32, color: TEXT_DARK, bold: true }, text: '' }},
-        { 'placeholder': { options: { name: 'lineTitle', type: 'body', x: 0.5, y: 3.4, w: 9.0, h: 0.6, fontFace: 'Montserrat', fontSize: 24, color: TEXT_DARK }, text: '' }},
-      ],
+      objects: masterTitleObjects,
     });
 
+    const masterContentObjects = [];
+    if (sicrediLogoData) {
+      masterContentObjects.push({
+        image: {
+          data: sicrediLogoData,
+          x: SICREDI_LOGO_BOX.x,
+          y: SICREDI_LOGO_BOX.y,
+          w: SICREDI_LOGO_BOX.w,
+          h: SICREDI_LOGO_BOX.h,
+        },
+      });
+    }
+
     pptx.defineSlideMaster({
-        title: 'MASTER_CONTENT_SPLIT',
-        background: { color: BG_LIGHT },
+      title: 'MASTER_CONTENT_SPLIT',
+      background: { color: BG_LIGHT },
+      objects: masterContentObjects,
     });
     
     // SLIDE 1: Capa
@@ -412,6 +508,9 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
     if (fs.existsSync(COVER_IMAGE_PATH)) {
         const capaBase64 = fs.readFileSync(COVER_IMAGE_PATH, 'base64');
         slideCapa.addImage({ data: `data:image/png;base64,${capaBase64}`, w: '100%', h: '100%' });
+    }
+    if (sicrediLogoData) {
+      injectSicrediLogo(slideCapa);
     }
 
     // Itera sobre as Linhas Criativas e Peças
@@ -520,6 +619,9 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
     if (fs.existsSync(COVER_IMAGE_PATH)) {
         const capaBase64 = fs.readFileSync(COVER_IMAGE_PATH, 'base64');
         slideFinal.addImage({ data: `data:image/png;base64,${capaBase64}`, w: '100%', h: '100%' });
+    }
+    if (sicrediLogoData) {
+      injectSicrediLogo(slideFinal);
     }
 
     // Gera e envia o arquivo
