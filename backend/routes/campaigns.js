@@ -406,12 +406,12 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
     const isSicredi = normalizedClientName === 'SICREDI';
     const highlightColor = isSicredi ? SICREDI_GREEN : SUNO_YELLOW;
 
-    const SICREDI_LOGO_PATH = path.join(__dirname, '../assets/sicredi-logo.svg');
+    const SICREDI_LOGO_PATH = path.join(__dirname, '../assets/sicredi.png');
     const sicrediLogoData =
       isSicredi && fs.existsSync(SICREDI_LOGO_PATH)
-        ? `data:image/svg+xml;base64,${fs.readFileSync(SICREDI_LOGO_PATH, 'base64')}`
+        ? `data:image/png;base64,${fs.readFileSync(SICREDI_LOGO_PATH, 'base64')}`
         : null;
-    const SICREDI_LOGO_BOX = { x: 9.0, y: 0.25, w: 1.6, h: 0.6 };
+    const SICREDI_LOGO_BOX = { x: 8.5, y: 0.25, w: 1.2, h: 0.45 }; // Ajustado para não recortar
     const injectSicrediLogo = (slide) => {
       if (!sicrediLogoData) return;
       slide.addImage({
