@@ -44,7 +44,7 @@ async function createSessionStore() {
   // const redisUrl = process.env.REDIS_URL; // Ignoramos o Redis
   const redisUrl = null; // <-- FORÇAMOS O REDIS A SER NULO
 
-  if (redisUrl && isProduction) { 
+  if (redisUrl && isProduction) {
     try {
       // ... (este bloco de código agora será pulado)
     } catch (error) {
@@ -57,9 +57,18 @@ async function createSessionStore() {
 
   // O código agora SEMPRE vai executar este bloco:
   console.log("[SESSION] Utilizando SQLite como store de sessão.");
+
+  const dbPath = process.env.SQLITE_STORAGE_PATH || "database.sqlite";
+  const dbDir = require('path').dirname(dbPath);
+  const fs = require('fs');
+
+  if (dbDir !== '.' && !fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+
   return new SQLiteStoreFactory({
-    db: "database.sqlite",
-    dir: "./", // Salva no disco persistente do Render
+    db: dbPath,
+    dir: dbDir === '.' ? './' : dbDir, // Se for caminho absoluto, o connect-sqlite3 pode precisar de ajuste no dir/db
   });
 }
 

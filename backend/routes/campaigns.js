@@ -20,10 +20,11 @@ const {
 } = require('../utils/media');
 
 // --- Configuração e Funções Auxiliares ---
-const uploadDir = path.join(__dirname, '../uploads');
+const uploadDir = process.env.UPLOADS_STORAGE_PATH || path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
+console.log(`[CONFIG] Diretório de uploads: ${uploadDir}`);
 const UPLOAD_MAX_FILE_BYTES = Number(process.env.UPLOAD_MAX_FILE_BYTES || 200 * 1024 * 1024); // ~200MB
 const UPLOAD_MAX_FILE_MB = Math.round(UPLOAD_MAX_FILE_BYTES / (1024 * 1024));
 const PPT_MAX_MEDIA_BYTES = Number(process.env.PPT_MAX_MEDIA_BYTES || 40 * 1024 * 1024); // ~40MB
@@ -368,8 +369,11 @@ router.delete('/:id', ensureAuth, async (req, res, next) => {
 router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
   try {
     const userAccessToken = req.session?.accessToken;
+    console.log(`[EXPORT-PPT] Iniciando exportação para campanha ${req.params.id}. User: ${req.user.id}`);
+
     if (!userAccessToken) {
-        return res.status(403).json({ error: 'Autenticação com Google Drive não encontrada. Por favor, reconecte.' });
+      console.warn('[EXPORT-PPT] Token de acesso não encontrado na sessão.');
+      return res.status(403).json({ error: 'Autenticação com Google Drive não encontrada. Por favor, reconecte.' });
     }
 
     const campaign = await Campaign.findOne({
@@ -497,13 +501,13 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
       background: { color: BG_LIGHT },
       objects: masterContentObjects,
     });
-    
+
     // SLIDE 1: Capa
     const COVER_IMAGE_PATH = path.join(__dirname, '../assets/suno-cover.png');
     let slideCapa = pptx.addSlide();
     if (fs.existsSync(COVER_IMAGE_PATH)) {
-        const capaBase64 = fs.readFileSync(COVER_IMAGE_PATH, 'base64');
-        slideCapa.addImage({ data: `data:image/png;base64,${capaBase64}`, w: '100%', h: '100%' });
+      const capaBase64 = fs.readFileSync(COVER_IMAGE_PATH, 'base64');
+      slideCapa.addImage({ data: `data:image/png;base64,${capaBase64}`, w: '100%', h: '100%' });
     }
     if (sicrediLogoData) {
       injectSicrediLogo(slideCapa);
@@ -520,7 +524,7 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
           let slidePeca = pptx.addSlide({ masterName: 'MASTER_CONTENT_SPLIT' });
 
           // --- INÍCIO DA ALTERAÇÃO ---
-          
+
           // Prepara os textos que SEMPRE estarão presentes
           const textElements = [
             { text: 'Nome da Peça:', options: { fontFace: 'Montserrat', bold: true, fontSize: 14, color: TEXT_DARK, breakLine: true } },
@@ -529,30 +533,30 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
 
           // Adiciona o Texto de Apoio APENAS se ele existir e não for vazio
           if (piece.comment && piece.comment.trim() !== '') {
-              textElements.push(
-                  { text: '', options: { breakLine: true } }, // Adiciona um espaço
-                  { text: 'Texto de Apoio:', options: { fontFace: 'Montserrat', bold: true, fontSize: 12, color: TEXT_DARK, breakLine: true } },
-                  { text: piece.comment, options: { fontFace: 'Montserrat', fontSize: 10, color: TEXT_DARK, breakLine: true } }
-              );
+            textElements.push(
+              { text: '', options: { breakLine: true } }, // Adiciona um espaço
+              { text: 'Texto de Apoio:', options: { fontFace: 'Montserrat', bold: true, fontSize: 12, color: TEXT_DARK, breakLine: true } },
+              { text: piece.comment, options: { fontFace: 'Montserrat', fontSize: 10, color: TEXT_DARK, breakLine: true } }
+            );
           }
 
           // Adiciona a caixa de texto ao slide com todos os elementos preparados
           slidePeca.addText(textElements, {
-              x: 0.5,
-              y: 0.5,
-              w: 2.7, // Largura da caixa de texto (ajuste se necessário)
-              h: 4.5, // Altura da caixa de texto (ajuste se necessário)
-              align: 'left',
-              valign: 'top',
-              autoFit: true, // Tenta ajustar o texto ao container
-              fontSize: 10, // Define um tamanho base
+            x: 0.5,
+            y: 0.5,
+            w: 2.7, // Largura da caixa de texto (ajuste se necessário)
+            h: 4.5, // Altura da caixa de texto (ajuste se necessário)
+            align: 'left',
+            valign: 'top',
+            autoFit: true, // Tenta ajustar o texto ao container
+            fontSize: 10, // Define um tamanho base
           });
 
           // --- FIM DA ALTERAÇÃO ---
 
           const isImage = (piece.mimetype || '').startsWith('image/');
           const isVideo = (piece.mimetype || '').startsWith('video/');
-          
+
           if (isImage || isVideo) {
             const fileData = await getFileData(piece, userAccessToken);
             if (fileData?.skip) {
@@ -613,22 +617,27 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
     // SLIDE FINAL: Capa
     let slideFinal = pptx.addSlide();
     if (fs.existsSync(COVER_IMAGE_PATH)) {
-        const capaBase64 = fs.readFileSync(COVER_IMAGE_PATH, 'base64');
-        slideFinal.addImage({ data: `data:image/png;base64,${capaBase64}`, w: '100%', h: '100%' });
+      const capaBase64 = fs.readFileSync(COVER_IMAGE_PATH, 'base64');
+      slideFinal.addImage({ data: `data:image/png;base64,${capaBase64}`, w: '100%', h: '100%' });
     }
     if (sicrediLogoData) {
       injectSicrediLogo(slideFinal);
     }
 
     // Gera e envia o arquivo
+    // Gera e envia o arquivo
     const filename = `${safeFilename(campaign.name)}.pptx`;
+    console.log(`[EXPORT-PPT] Gerando buffer do PPT...`);
     const pptxBuffer = await pptx.write('arraybuffer');
+    console.log(`[EXPORT-PPT] Buffer gerado. Tamanho: ${pptxBuffer.byteLength} bytes. Enviando resposta...`);
+
     res.writeHead(200, {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       'Content-Disposition': `attachment; filename="${filename}"`,
       'Content-Length': pptxBuffer.byteLength,
     });
     res.end(Buffer.from(pptxBuffer));
+    console.log(`[EXPORT-PPT] Exportação concluída com sucesso.`);
 
   } catch (error) {
     console.error("Erro ao gerar PPT:", error);
