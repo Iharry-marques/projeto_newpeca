@@ -26,10 +26,19 @@ const app = express();
 const isProduction = process.env.NODE_ENV === "production";
 const redisUrl = process.env.REDIS_URL;
 
-const allowedOrigins = (process.env.FRONTEND_URL || "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const defaultAllowedOrigins = [
+  "http://localhost:3001",
+  "http://localhost:5173",
+  "https://newpeca-frontend.onrender.com",
+];
+
+const allowedOrigins = [
+  ...defaultAllowedOrigins,
+  ...(process.env.FRONTEND_URL || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+];
 
 async function createSessionStore() {
   // const redisUrl = process.env.REDIS_URL; // Ignoramos o Redis

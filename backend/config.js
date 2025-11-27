@@ -1,7 +1,14 @@
+const databaseUrl = process.env.DATABASE_URL;
+
 module.exports = {
   jwtSecret: 'replace_this_secret',
-  db: {
-    dialect: 'sqlite',
-    storage: 'database.sqlite'
-  }
+  db: databaseUrl
+    ? {
+        dialect: 'postgres',
+        url: databaseUrl,
+      }
+    : {
+        dialect: 'sqlite',
+        storage: 'database.sqlite',
+      },
 };

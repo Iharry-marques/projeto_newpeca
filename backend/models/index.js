@@ -3,11 +3,22 @@
 const { Sequelize } = require('sequelize');
 const config = require('../config').db;
 
-const sequelize = new Sequelize({
-  dialect: config.dialect,
-  storage: config.storage,
-  logging: false, // Desligado para um console mais limpo
-});
+const sequelize = config.url
+  ? new Sequelize(config.url, {
+      dialect: config.dialect,
+      logging: false,
+      dialectOptions: {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false, // Render/managed PG usa certificados self-signed
+        },
+      },
+    })
+  : new Sequelize({
+      dialect: config.dialect,
+      storage: config.storage,
+      logging: false, // Desligado para um console mais limpo
+    });
 
 // Carrega todos os modelos
 const modelDefiners = [
