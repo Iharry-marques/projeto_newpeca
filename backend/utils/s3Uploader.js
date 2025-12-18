@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
 // 1. Configurar o Cliente S3 para apontar para o Cloudflare R2
+const R2_ENDPOINT = process.env.R2_ENDPOINT;
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
@@ -12,12 +13,12 @@ const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
 // Ex: "https://pub-xxxxxxxx.r2.dev/aprobi-producao"
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL;
 
-if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME || !R2_PUBLIC_URL) {
-  console.warn('[R2 UPLOADER] Variáveis de ambiente do R2 não estão totalmente configuradas. Uploads falharão.');
+if ((!R2_ENDPOINT && !R2_ACCOUNT_ID) || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME || !R2_PUBLIC_URL) {
+  console.warn('[R2 UPLOADER] Variáveis de ambiente do R2/MinIO estão incompletas. Uploads falharão.');
 }
 
 const s3 = new S3({
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: R2_ENDPOINT || (R2_ACCOUNT_ID ? `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : undefined),
   accessKeyId: R2_ACCESS_KEY_ID,
   secretAccessKey: R2_SECRET_ACCESS_KEY,
   signatureVersion: 'v4',
