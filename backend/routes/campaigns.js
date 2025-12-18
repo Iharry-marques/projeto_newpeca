@@ -631,12 +631,13 @@ router.get('/:id/export-ppt', ensureAuth, async (req, res, next) => {
     const pptxBuffer = await pptx.write('arraybuffer');
     console.log(`[EXPORT-PPT] Buffer gerado. Tamanho: ${pptxBuffer.byteLength} bytes. Enviando resposta...`);
 
-    res.writeHead(200, {
+    res.status(200);
+    res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       'Content-Disposition': `attachment; filename="${filename}"`,
       'Content-Length': pptxBuffer.byteLength,
     });
-    res.end(Buffer.from(pptxBuffer));
+    res.send(Buffer.from(pptxBuffer));
     console.log(`[EXPORT-PPT] Exportação concluída com sucesso.`);
 
   } catch (error) {
